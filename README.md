@@ -17,14 +17,31 @@ materie prime:
 passi (33 ricette diverse): ...
 ```
 
-- `python3 cost.py "<nome>" [quantità] [--tier LV|MV|HV|...]` — albero di ricette più economico fino alle materie prime.
-  `--tier` usa solo ricette fattibili fino a quel voltaggio.
+- `python3 cost.py "<nome>" [quantità] [--tier Stone|Steam|ULV|LV|MV|...]` — albero di ricette più economico fino alle
+  materie prime. `--tier` usa solo ricette fattibili fino a quel tier (vedi [Tier](#tier)).
 - `python3 cost.py --find hull` — cerca per nome.
-- `python3 web/export.py /srv/test/gtnh-cost` — sito statico: per ogni tier (ULV..MAX) la ricetta scelta per ogni
+- `python3 web/export.py /srv/test/gtnh-cost` — sito statico: per ogni tier (Stone..MAX) la ricetta scelta per ogni
   oggetto in `data/<tier>.json` (+ `.gz`), nomi in `data/items.json`; il browser rifà l'espansione di `cost.py`.
   Niente server: Caddy serve i file (`file_server { precompressed gzip }`). Ci mette qualche minuto (un solve per tier).
 - `python3 build.py` — ricompatta il dataset (export oracle GTNH 2.9.0-rc-2, 280k ricette tra GregTech, crafting,
   fornace e Thaumcraft) in `recipes.pkl`, leggendolo una riga alla volta.
+
+## Tier
+
+Ogni tier include quelli più bassi: Stone < Steam < ULV < LV < … < MAX. Una ricetta sta nel primo tier in cui c'è
+una macchina che la sa fare (regole in `recipe_tier`, `cost.py`):
+
+- **Stone**: banco da lavoro (shaped/shapeless), fornace, calderone, Coke Oven, Bricked Blast Furnace.
+- **Steam**: le macchine a vapore di GT, bronze e steel (high pressure): Macerator, Compressor, Extractor,
+  Forge Hammer, Alloy Smelter, Furnace; i multiblocchi a vapore di GT++: Steam Grinder, Squasher, Separator, Presser,
+  Purifier, Blender, Fuser, Hearth. Solo ricette fino a 32 EU/t: le macchine a vapore cercano le ricette a voltaggio
+  LV (`MTEBasicMachineBronze.checkRecipe` in GT5-Unofficial). Anche Thaumcraft sta qui (scelta a occhio: non ha tier GT).
+- **ULV**: ricette fino a 8 EU/t, ma solo su macchine a blocco singolo. I multiblocchi si riconoscono dai
+  `machineHandlers` dell'export; quelli senza (Chemical Plant, Nuclear Fission, HTGR, LFTR, Nanochip Conversion
+  Complex, Component Assembly Line, Bacterial Vat, …) sono elencati a mano in `UNMARKED_MULTIBLOCKS` e vanno a LV.
+- **LV e oltre**: il `minimumTier` della ricetta nell'export, cioè il suo EU/t. Un multiblocco con ricette a basso EU/t
+  sta comunque ad almeno LV, anche se costruirlo richiede di più (es. Nuclear Fission): il dataset non dice da che
+  tier si costruisce una macchina.
 
 ## Modello di costo
 

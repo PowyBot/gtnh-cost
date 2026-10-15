@@ -22,9 +22,11 @@ SKIP_MACHINES = {
 SKIP_WORDS = ("Naquadah Reactor", "Generator", "Fuels")
 
 
-TIERS = ["NONE", "ULV", "LV", "MV", "HV", "EV", "IV", "LuV", "ZPM", "UV", "UHV", "UEV", "UIV", "UMV", "UXV", "OpV", "MAX"]
+VOLTAGES = ["NONE", "ULV", "LV", "MV", "HV", "EV", "IV", "LuV", "ZPM", "UV", "UHV", "UEV", "UIV", "UMV", "UXV", "OpV", "MAX"]
 VARIANTS = {}  # "minecraft:wool" -> tutte le metadata, per gli input jolly "@32767"
 OREDICT = {}  # "oredict:plateSteel" -> oggetti concreti accettati (dalle risorse del dataset)
+HANDLERS = {}  # one shared tuple per distinct machine set, instead of 280k copies in memory and in the pickle
+MULTIBLOCKS = set()
 
 
 def slot(entry):
@@ -50,8 +52,19 @@ def compact(recipe):
     inputs = [slot(i) for i in recipe["inputs"] if consumed(i)]
     outputs = [(o["id"], o["amount"] * o.get("chance", 1.0)) for o in recipe["outputs"] if o["kind"] != "aspect"]
     eut, ticks = max(recipe.get("eut") or 0, 0), max(recipe.get("durationTicks") or 0, 0)
-    tier = TIERS.index(recipe.get("minimumTier")) if recipe.get("minimumTier") in TIERS else 0
-    return recipe["machineType"], eut * ticks, inputs, outputs, tier, eut, ticks
+    voltage = VOLTAGES.index(recipe.get("minimumTier")) if recipe.get("minimumTier") in VOLTAGES else 0
+    return recipe["machineType"], eut * ticks, inputs, outputs, voltage, eut, ticks, handlers(recipe)
+
+
+def handlers(recipe):
+    """Machines that can run the recipe (e.g. Macerator, Steam Macerator, Steam Grinder); cost.py derives the tier from them."""
+    names = []
+    for h in recipe.get("machineHandlers") or ():
+        names.append(h["machineType"])
+        if h.get("kind") == "multiblock":
+            MULTIBLOCKS.add(h["machineType"])
+    names = tuple(sorted(set(names)))
+    return HANDLERS.setdefault(names, names)
 
 
 def dimension_cost(dim):
@@ -103,7 +116,8 @@ def main():
         # senza input = materia dal nulla (o ricette fantasma dell'export): fuori
         if keep(r) and (c := compact(r))[2] and c[3]:
             recipes.append(c)
-    pickle.dump({"recipes": recipes, "names": names, "kinds": kinds, "ores": ores}, open(OUT, "wb"))
+    pickle.dump({"recipes": recipes, "names": names, "kinds": kinds, "ores": ores,
+                 "multiblocks": MULTIBLOCKS}, open(OUT, "wb"))
     print(f"{len(recipes)} ricette tenute su {total}", file=sys.stderr)
 
 

@@ -1,6 +1,6 @@
 "use strict";
 // Stessa espansione di cost.py, sui file precalcolati da web/export.py.
-const TIERS = ["ULV", "LV", "MV", "HV", "EV", "IV", "LuV", "ZPM", "UV", "UHV", "UEV", "UIV", "UMV", "UXV", "OpV", "MAX"];
+const TIERS = ["Stone", "Steam", "ULV", "LV", "MV", "HV", "EV", "IV", "LuV", "ZPM", "UV", "UHV", "UEV", "UIV", "UMV", "UXV", "OpV", "MAX"];
 const $ = (id) => document.getElementById(id);
 let items = [], lower = [], byId = new Map(), tiers = new Map(), selected = null;
 
@@ -11,7 +11,8 @@ function pyFixed(a, d) {
   return /^50*$/.test(tail) && +head.at(-1) % 2 === 0 ? head : a.toFixed(d);
 }
 const fmt = (i, a) => items[i][2] ? `${pyFixed(a, 0)} L` : pyFixed(a, 2).replace(/0+$/, "").replace(/\.$/, "");
-const tierLabel = (t) => t === "MAX" ? "tutti (MAX)" : t;
+const TIER_LABELS = { Stone: "Stone (a mano, fornace)", Steam: "Steam (vapore)", MAX: "tutti (MAX)" };
+const tierLabel = (t) => TIER_LABELS[t] || t;
 
 async function getJSON(url) {
   const r = await fetch(url);

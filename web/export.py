@@ -12,7 +12,6 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import cost as gc  # noqa: E402
 
-WEB_TIERS = gc.TIERS[1:]  # ULV..MAX; MAX = tutte le ricette
 
 
 def write(path, obj):
@@ -31,13 +30,13 @@ def main(out):
     # [id, nome, fluido?, si raccoglie?]
     write(f"{out}/data/items.json", [[i, names.get(i, i), int(kinds.get(i) == "fluid"), int(bool(gc.GATHERED.search(i)))]
                                      for i in ids])
-    for tier in WEB_TIERS:
+    for tier in gc.TIERS:
         cost, choice = gc.cached_solve(data, gc.TIERS.index(tier))
         machines, how = [], {}
         for item, idx in choice.items():
             if idx == "raw" or item not in index:
                 continue
-            machine, _, inputs, outputs, _, eut, ticks = recipes[idx]
+            machine, _, inputs, outputs, _, eut, ticks = recipes[idx][:7]
             if machine not in machines:
                 machines.append(machine)
             made = next(a for o, a in outputs if o == item)

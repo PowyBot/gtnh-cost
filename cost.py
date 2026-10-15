@@ -7,7 +7,7 @@ Poi si espande l'albero delle ricette scelte fino alle materie prime.
 
 uso: python3 cost.py "LV Machine Hull" [quantità] [--tier MV]
      python3 cost.py --find hull
---tier limita le ricette a quelle fattibili fino a quel voltaggio (default: tutte, anche end-game).
+--tier limita le ricette a quelle fattibili fino a quel tier: Stone, Steam, ULV, LV, ... (default: tutte, anche end-game).
 """
 import heapq
 import os
@@ -47,12 +47,49 @@ def unit(kinds, item):
     return FLUID_UNIT if kinds.get(item) == "fluid" else 1.0
 
 
-TIERS = ["NONE", "ULV", "LV", "MV", "HV", "EV", "IV", "LuV", "ZPM", "UV", "UHV", "UEV", "UIV", "UMV", "UXV", "OpV", "MAX"]
+TIERS = ["Stone", "Steam", "ULV", "LV", "MV", "HV", "EV", "IV", "LuV", "ZPM", "UV", "UHV", "UEV", "UIV", "UMV", "UXV", "OpV", "MAX"]
+STONE, STEAM, ULV, LV = range(4)
+# build.py stores the export's minimumTier as an index into ["NONE", "ULV", "LV", ...]
+VOLTAGE_TO_TIER = 1
+
+# No machines at all, or primitive blocks built from bricks and clay.
+STONE_MACHINES = {"Shaped Crafting", "Shapeless Crafting", "Furnace", "Cauldron", "Coke Oven", "Bricked Blast Furnace"}
+# Bronze (normal) and steel (high pressure) single blocks, plus the GT++ steam multiblocks.
+STEAM_MACHINES = {
+    *(f"{pressure}Steam {m}" for pressure in ("", "High Pressure ")
+      for m in ("Macerator", "Compressor", "Extractor", "Forge Hammer", "Alloy Smelter", "Furnace")),
+    "Steam Grinder", "Steam Squasher", "Steam Separator", "Steam Presser", "Steam Purifier", "Steam Blender",
+    "Steam Fuser", "Steam Hearth",
+}
+# Steam machines look recipes up at LV voltage (MTEBasicMachineBronze.checkRecipe in GT5-Unofficial,
+# https://github.com/GTNewHorizons/GT5-Unofficial), so they run anything up to 32 EU/t of their recipe map.
+STEAM_MAX_EUT = 32
+# The export lists these without machineHandlers, so build.py can't tell they are multiblocks.
+# All have ULV-voltage recipes but need LV+ parts to build.
+UNMARKED_MULTIBLOCKS = {
+    "Chemical Plant", "Nanochip Conversion Complex", "Component Assembly Line", "Extreme Heat Exchanger",
+    "Bacterial Vat", "Multiblock Dehydrator", "Nuclear Fission", "Neutron Activator", "High Temperature Gas Reactor",
+    "Foundry Module Components", "Liquid Fluoride Thorium Reactor",
+}
+
+
+def recipe_tier(recipe, multiblocks):
+    machine, _, _, _, voltage, eut, _, handlers = recipe
+    if machine in STONE_MACHINES:
+        return STONE
+    # Thaumcraft has no GT tier: placed in steam age by eye, it's not something you do with just a crafting table.
+    if machine in MAGIC or (eut <= STEAM_MAX_EUT and any(h in STEAM_MACHINES for h in handlers)):
+        return STEAM
+    single_block = any(h not in multiblocks for h in handlers) if handlers else machine not in UNMARKED_MULTIBLOCKS
+    if voltage + VOLTAGE_TO_TIER <= ULV and single_block:
+        return ULV
+    # The voltage alone used to decide, so ULV filled up with 8 EU/t recipes of LV+ multiblocks.
+    return max(voltage + VOLTAGE_TO_TIER, LV)
 
 
 def solve(data, max_tier=len(TIERS)):
     recipes, kinds = data["recipes"], data["kinds"]
-    allowed = [r[4] <= max_tier for r in recipes]
+    allowed = [recipe_tier(r, data["multiblocks"]) <= max_tier for r in recipes]
     produced = {o for r, ok in zip(recipes, allowed) if ok for o, _ in r[3]}
     used_by = defaultdict(list)
     for idx, r in enumerate(recipes):
