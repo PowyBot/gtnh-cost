@@ -1,4 +1,4 @@
-"""Compatta recipes.json.gz (253k ricette) in un pickle leggero per cost.py."""
+"""Compatta recipes.json.gz (280k ricette: GregTech, crafting, fornace, Thaumcraft) in un pickle leggero per cost.py."""
 import gzip
 import json
 import pickle
@@ -16,7 +16,7 @@ SKIP_MACHINES = {
     "Tree Growth Simulator", "Rock Breaker", "Printer", "Crop Gene Extractor", "Crop Synthesizer",
     "Crop Breeder", "Magic Energy Absorber Fuels", "Combustion Generator Fuels", "Plasma Generator Fuels",
     "Bee Produce", "IC2 Crop", "Ore Vein", "Small Ore", "Underground Fluid", "Solar Tower",
-    "Thaumcraft Crucible", "Thaumcraft Infusion", "Thaumcraft Arcane Crafting", "Thaumcraft",
+    "Thaumcraft",
     "Isotope Decay", "Molecular Transformer",
 }
 SKIP_WORDS = ("Naquadah Reactor", "Generator", "Fuels")
@@ -61,35 +61,50 @@ def dimension_cost(dim):
     return 1.0 + 3.0 * dim["tier"]
 
 
-def ore_costs(data):
+def ore_cost(recipe, best):
     """Nome del minerale -> costo del posto più comodo dove trovarlo (vene GregTech)."""
-    best = {}
-    for r in data["recipes"]:
-        if r["kind"] != "ore_vein":
-            continue
-        where = min((dimension_cost(d) for d in r["metadata"].get("dimensions", ())), default=None)
-        for o in r["outputs"] if where is not None else ():
-            best[o["displayName"]] = min(best.get(o["displayName"], where), where)
-    return best
+    where = min((dimension_cost(d) for d in recipe["metadata"].get("dimensions", ())), default=None)
+    for o in recipe["outputs"] if where is not None else ():
+        best[o["displayName"]] = min(best.get(o["displayName"], where), where)
+
+
+def entries(section):
+    """Le voci di "resources" o "recipes" una alla volta: l'export ne scrive una per riga e scompattato pesa ~1 GB."""
+    inside = False
+    with gzip.open(DATASET, "rt", encoding="utf-8") as lines:
+        for line in lines:
+            if line.startswith(f'  "{section}": ['):
+                inside = True
+            elif inside and line.startswith("  ]"):
+                return
+            elif inside:
+                yield json.loads(line.rstrip().rstrip(","))
 
 
 def main():
-    data = json.load(gzip.open(DATASET))
-    names = {r["id"]: r.get("displayName", r["id"]) for r in data["resources"]}
-    kinds = {r["id"]: r["kind"] for r in data["resources"]}
-    OREDICT.update({r["id"]: [a["id"] for a in r["alternatives"]] for r in data["resources"] if r.get("alternatives")})
-    for r in data["recipes"]:
+    names, kinds = {}, {}
+    for r in entries("resources"):
+        names[r["id"]] = r.get("displayName", r["id"])
+        kinds[r["id"]] = r["kind"]
+        if r.get("alternatives"):
+            OREDICT[r["id"]] = [a["id"] for a in r["alternatives"]]
+    # compact() ha bisogno di tutti i VARIANTS: una prima passata solo per loro
+    for r in entries("recipes"):
         for e in r["outputs"]:
             VARIANTS.setdefault(e["id"].split("@")[0], []).append(e["id"])
-    recipes = [compact(r) for r in data["recipes"] if keep(r)]
-    # senza input = materia dal nulla (o ricette fantasma dell'export): fuori
-    recipes = [r for r in recipes if r[2] and r[3]]
-    for r in data["recipes"]:
+    recipes, ores, total = [], {}, 0
+    for r in entries("recipes"):
+        total += 1
+        if r["kind"] == "ore_vein":
+            ore_cost(r, ores)
         for e in r["inputs"] + r["outputs"]:
             names.setdefault(e["id"], e.get("displayName", e["id"]))
             kinds.setdefault(e["id"], e["kind"])
-    pickle.dump({"recipes": recipes, "names": names, "kinds": kinds, "ores": ore_costs(data)}, open(OUT, "wb"))
-    print(f"{len(recipes)} ricette tenute su {len(data['recipes'])}", file=sys.stderr)
+        # senza input = materia dal nulla (o ricette fantasma dell'export): fuori
+        if keep(r) and (c := compact(r))[2] and c[3]:
+            recipes.append(c)
+    pickle.dump({"recipes": recipes, "names": names, "kinds": kinds, "ores": ores}, open(OUT, "wb"))
+    print(f"{len(recipes)} ricette tenute su {total}", file=sys.stderr)
 
 
 if __name__ == "__main__":

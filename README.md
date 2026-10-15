@@ -23,7 +23,8 @@ passi (33 ricette diverse): ...
 - `python3 web/export.py /srv/test/gtnh-cost` — sito statico: per ogni tier (ULV..MAX) la ricetta scelta per ogni
   oggetto in `data/<tier>.json` (+ `.gz`), nomi in `data/items.json`; il browser rifà l'espansione di `cost.py`.
   Niente server: Caddy serve i file (`file_server { precompressed gzip }`). Ci mette qualche minuto (un solve per tier).
-- `python3 build.py` — ricompatta il dataset (export oracle GTNH 2.9.0-rc-2, 253k ricette) in `recipes.pkl`.
+- `python3 build.py` — ricompatta il dataset (export oracle GTNH 2.9.0-rc-2, 280k ricette tra GregTech, crafting,
+  fornace e Thaumcraft) in `recipes.pkl`, leggendolo una riga alla volta.
 
 ## Modello di costo
 
@@ -32,6 +33,8 @@ passi (33 ricette diverse): ...
 - Ricetta: somma input + energia (100k EU = 1) + un piccolo costo per passo; diviso per quanti pezzi produce.
   Input non consumati (stampi, circuiti programmati, attrezzi) non contano. I sottoprodotti sono gratis.
 - Oggetti che nessuna ricetta produce e non si raccolgono: 1000 e marcati `(?)`.
+- Thaumcraft (banco arcano, crogiolo, infusione): vis ed essentia non si stimano; la ricetta costa i suoi oggetti più una
+  cifra fissa (0.5 / 1 / 4, `MAGIC` in `cost.py`).
 - Fuori: macchine che creano materia (replicator, space mining, ...) o fanno energia, ricette senza input.
 
 ## Algoritmo

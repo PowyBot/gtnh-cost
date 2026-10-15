@@ -23,6 +23,8 @@ FLUID_UNIT = 1000.0   # 1000 L di fluido = 1 oggetto
 INF = float("inf")
 SWEEPS = 8            # passate di miglioramento dopo Knuth
 UNKNOWN = 1000.0      # oggetti che nessuna ricetta produce e che non so raccogliere: ultima spiaggia
+# Vis ed essentia di Thaumcraft non sono nel modello: ogni ricetta magica costa una cifra fissa in più.
+MAGIC = {"Thaumcraft Arcane Crafting": 0.5, "Thaumcraft Crucible": 1.0, "Thaumcraft Infusion": 4.0}
 
 # Cose che si raccolgono nel mondo anche se qualche ricetta le produce (sennò i cicli le lasciano senza costo).
 GATHERED = re.compile(
@@ -116,8 +118,8 @@ def cheapest(ids, cost):
 
 
 def outputs_cost(recipe, cost):
-    _, eu, inputs, outputs = recipe[:4]
-    total = STEP + eu * EU_WEIGHT + sum(amount * cost.get(cheapest(ids, cost), INF) for ids, amount in inputs)
+    machine, eu, inputs, outputs = recipe[:4]
+    total = STEP + eu * EU_WEIGHT + MAGIC.get(machine, 0.0) + sum(amount * cost.get(cheapest(ids, cost), INF) for ids, amount in inputs)
     return [(item, total / amount) for item, amount in outputs if amount > 0 and total < INF]
 
 
