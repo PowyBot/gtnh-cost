@@ -69,7 +69,7 @@ def ore_cost(recipe, best):
 
 
 def entries(section):
-    """Le voci di "resources" o "recipes" una alla volta: l'export ne scrive una per riga e scompattato pesa ~1 GB."""
+    """Le voci di "resources" o "recipes" una alla volta: l'export ne scrive una per riga e scompattato pesa ~1.7 GB."""
     inside = False
     with gzip.open(DATASET, "rt", encoding="utf-8") as lines:
         for line in lines:
