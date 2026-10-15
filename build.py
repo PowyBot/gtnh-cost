@@ -49,9 +49,9 @@ def keep(recipe):
 def compact(recipe):
     inputs = [slot(i) for i in recipe["inputs"] if consumed(i)]
     outputs = [(o["id"], o["amount"] * o.get("chance", 1.0)) for o in recipe["outputs"] if o["kind"] != "aspect"]
-    eu = max(recipe.get("eut") or 0, 0) * max(recipe.get("durationTicks") or 0, 0)
+    eut, ticks = max(recipe.get("eut") or 0, 0), max(recipe.get("durationTicks") or 0, 0)
     tier = TIERS.index(recipe.get("minimumTier")) if recipe.get("minimumTier") in TIERS else 0
-    return recipe["machineType"], eu, inputs, outputs, tier
+    return recipe["machineType"], eut * ticks, inputs, outputs, tier, eut, ticks
 
 
 def dimension_cost(dim):

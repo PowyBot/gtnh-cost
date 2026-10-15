@@ -116,7 +116,7 @@ def cheapest(ids, cost):
 
 
 def outputs_cost(recipe, cost):
-    _, eu, inputs, outputs, _ = recipe
+    _, eu, inputs, outputs = recipe[:4]
     total = STEP + eu * EU_WEIGHT + sum(amount * cost.get(cheapest(ids, cost), INF) for ids, amount in inputs)
     return [(item, total / amount) for item, amount in outputs if amount > 0 and total < INF]
 
@@ -140,7 +140,7 @@ def expand(data, cost, choice, item, amount, raw, steps, path=()):
     if how is None or how == "raw" or item in path:
         raw[item] += amount
         return
-    machine, _, inputs, outputs, _ = data["recipes"][how]
+    machine, _, inputs, outputs = data["recipes"][how][:4]
     made = next(a for o, a in outputs if o == item)
     runs = amount / made
     steps[(machine, item)] += runs

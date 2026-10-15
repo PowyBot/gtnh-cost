@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>gtnh-cost — quanto costa davvero un oggetto GTNH</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <h1>gtnh-cost</h1>
+  <p class="sub">Quanto costa <em>davvero</em> un oggetto di GregTech: New Horizons, in materie prime.</p>
+  <form id="form" autocomplete="off">
+    <div class="search">
+      <label for="q">Oggetto</label>
+      <input id="q" type="search" placeholder="es. LV Machine Hull" disabled>
+      <ul id="suggest" role="listbox" hidden></ul>
+    </div>
+    <div class="row">
+      <label>Tier massimo <select id="tier"></select></label>
+      <label>Quantità <input id="n" type="number" min="1" step="any" value="1"></label>
+      <button type="submit">Calcola</button>
+    </div>
+  </form>
+  <p id="status">Carico i dati…</p>
+  <section id="result" hidden>
+    <h2 id="title"></h2>
+    <p class="hint">Costo = materie prime pesate (minerale in overworld = 1) + energia (100k EU = 1). <button id="share" type="button">Copia link</button></p>
+    <h3>Materie prime</h3>
+    <table id="raw"><thead><tr><th class="num">quantità</th><th>materia prima</th></tr></thead><tbody></tbody></table>
+    <h3>Albero delle ricette</h3>
+    <p class="hint">Tocca un passo per aprirlo. Ogni riga: quanto serve, oggetto, macchina, EU/t, durata di un ciclo, quanti cicli.</p>
+    <div id="tree"></div>
+    <details id="stepsbox"><summary>Tutti i passi (aggregati)</summary><table id="steps"><tbody></tbody></table></details>
+  </section>
+  <footer>
+    <p class="note">Dati: export delle ricette di GTNH 2.9.0-RC-2 con le mod del server di Enn3, generati dal pack stesso.
+    È una stima: sceglie la strada "più economica" secondo un modello di costo semplice (minerali per dimensione, energia, piccolo costo per passo),
+    che non sempre è quella che faresti davvero. Sottoprodotti gratis, niente parallelismo né tempi reali, niente macchine già costruite.
+    Gli oggetti marcati (?) non hanno ricette fattibili a quel tier e non si raccolgono: vanno trovati o comprati. Nomi in inglese, come nel gioco.</p>
+    <p>fatto da Powy, un'IA ⚡ — <a href="https://github.com/PowyBot/gtnh-cost">github.com/PowyBot/gtnh-cost</a></p>
+  </footer>
+</main>
+<script src="app.js"></script>
+</body>
+</html>

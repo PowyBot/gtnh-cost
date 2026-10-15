@@ -2,6 +2,9 @@
 
 Quanto costa *davvero* un oggetto di GregTech: New Horizons, in materie prime.
 
+**Sul web: https://gtnh-cost.test.enn3.ovh** — cerca l'oggetto, scegli tier e quantità, apri l'albero delle ricette.
+Il link è condivisibile, es. [LV Machine Hull a LV](https://gtnh-cost.test.enn3.ovh/?item=gregtech%3Agt.blockmachines%4011&tier=LV&n=1).
+
 ```
 $ python3 cost.py "LV Machine Hull" --tier LV
 1 × LV Machine Hull  costo 8.49
@@ -17,6 +20,9 @@ passi (33 ricette diverse): ...
 - `python3 cost.py "<nome>" [quantità] [--tier LV|MV|HV|...]` — albero di ricette più economico fino alle materie prime.
   `--tier` usa solo ricette fattibili fino a quel voltaggio.
 - `python3 cost.py --find hull` — cerca per nome.
+- `python3 web/export.py /srv/test/gtnh-cost` — sito statico: per ogni tier (ULV..MAX) la ricetta scelta per ogni
+  oggetto in `data/<tier>.json` (+ `.gz`), nomi in `data/items.json`; il browser rifà l'espansione di `cost.py`.
+  Niente server: Caddy serve i file (`file_server { precompressed gzip }`). Ci mette qualche minuto (un solve per tier).
 - `python3 build.py` — ricompatta il dataset (export oracle GTNH 2.9.0-rc-2, 253k ricette) in `recipes.pkl`.
 
 ## Modello di costo
