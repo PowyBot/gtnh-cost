@@ -10,6 +10,7 @@ uso: python3 cost.py "LV Machine Hull" [quantità] [--tier MV]
 --tier limita le ricette a quelle fattibili fino a quel tier: Stone, Steam, ULV, LV, ... (default: tutte, anche end-game).
 """
 import heapq
+import math
 import os
 import pickle
 import re
@@ -87,14 +88,35 @@ def recipe_tier(recipe, multiblocks):
     return max(voltage + VOLTAGE_TO_TIER, LV)
 
 
+# A cost is a pair (unknown, real): how many unknown items (no recipe, not gathered) a route needs, and
+# everything else. Pairs compare lexicographically, so a route needing even a tiny amount of an unknown item
+# never beats a fully known one: 5e-5 Oil Comb at a flat 1000 used to win the LV circuit's oil chain.
+NO_ROUTE = (INF, INF)
+
+
+def shown(c):
+    """Single number for display: each unknown item counts as UNKNOWN, like before costs became pairs."""
+    return c[0] * UNKNOWN + c[1]
+
+
+def cheaper(a, b):
+    """a < b, ignoring float noise so that sweeps don't flip between equal routes."""
+    if a[0] != b[0] and not math.isclose(a[0], b[0], rel_tol=1e-6):
+        return a[0] < b[0]
+    return a[1] < b[1] * (1 - 1e-6)
+
+
 def solve(data, max_tier=len(TIERS)):
+    """Cost of every item, and how it is made: "raw", or (recipe index, chosen item for each input slot)."""
     recipes, kinds = data["recipes"], data["kinds"]
     allowed = [recipe_tier(r, data["multiblocks"]) <= max_tier for r in recipes]
-    produced = {o for r, ok in zip(recipes, allowed) if ok for o, _ in r[3]}
+    producers = defaultdict(list)
     used_by = defaultdict(list)
     for idx, r in enumerate(recipes):
         if not allowed[idx]:
             continue
+        for out, _ in r[3]:
+            producers[out].append(idx)
         for slot_ids, _ in r[2]:
             for item in slot_ids:
                 used_by[item].append(idx)
@@ -105,16 +127,16 @@ def solve(data, max_tier=len(TIERS)):
     heap = []
 
     def offer(item, value, how):
-        if item in done or value >= cost.get(item, INF):
+        if item in done or not value < cost.get(item, NO_ROUTE):
             return
         cost[item], choice[item] = value, how
         heapq.heappush(heap, (value, item))
 
-    for item in set(kinds) | produced:
+    for item in set(kinds) | set(producers):
         if GATHERED.search(item):
-            offer(item, data["ores"].get(data["names"].get(item), 1.0) / unit(kinds, item), "raw")
-        elif item not in produced:
-            offer(item, UNKNOWN / unit(kinds, item), "raw")
+            offer(item, (0.0, data["ores"].get(data["names"].get(item), 1.0) / unit(kinds, item)), "raw")
+        elif item not in producers:
+            offer(item, (1.0 / unit(kinds, item), 0.0), "raw")
 
     # 1) Dijkstra generalizzato (Knuth): una ricetta scatta quando tutti gli input hanno costo definitivo.
     while heap:
@@ -130,8 +152,9 @@ def solve(data, max_tier=len(TIERS)):
                 waiting[idx] -= 1
             if waiting[idx] == 0:
                 waiting[idx] = -1
-                for out, value in outputs_cost(recipes[idx], cost):
-                    offer(out, value, idx)
+                picks, outs = outputs_cost(recipes[idx], cost)
+                for out, value in outs:
+                    offer(out, value, (idx, picks))
 
     # 2) Knuth vale solo se un prodotto costa più dei suoi ingredienti; in GT no (1 minerale -> 3 polveri),
     #    quindi qualcosa è stato chiuso troppo presto. Passate di rilassamento, accettando un ribasso
@@ -141,27 +164,40 @@ def solve(data, max_tier=len(TIERS)):
         for idx, r in enumerate(recipes):
             if not allowed[idx]:
                 continue
-            for out, value in outputs_cost(r, cost):
-                if value < cost.get(out, INF) * (1 - 1e-6) and not depends_on(recipes, cost, choice, idx, out):
-                    cost[out], choice[out] = value, idx
+            picks, outs = outputs_cost(r, cost)
+            for out, value in outs:
+                if cheaper(value, cost.get(out, NO_ROUTE)) and not depends_on(choice, picks, out):
+                    cost[out], choice[out] = value, (idx, picks)
                     changed += 1
         if not changed:
             break
+    break_cycles(recipes, producers, kinds, cost, choice)
     return cost, choice
 
 
 def cheapest(ids, cost):
-    return min(ids, key=lambda i: cost.get(i, INF))
+    return min(ids, key=lambda i: cost.get(i, NO_ROUTE))
 
 
 def outputs_cost(recipe, cost):
+    """Cheapest item for each input slot, and the cost of each output when made from those."""
     machine, eu, inputs, outputs = recipe[:4]
-    total = STEP + eu * EU_WEIGHT + MAGIC.get(machine, 0.0) + sum(amount * cost.get(cheapest(ids, cost), INF) for ids, amount in inputs)
-    return [(item, total / amount) for item, amount in outputs if amount > 0 and total < INF]
+    picks = tuple(cheapest(ids, cost) for ids, _ in inputs)
+    unknown, real = 0.0, STEP + eu * EU_WEIGHT + MAGIC.get(machine, 0.0)
+    for item, (_, amount) in zip(picks, inputs):
+        u, c = cost.get(item, NO_ROUTE)
+        unknown += amount * u
+        real += amount * c
+    if not (unknown < INF and real < INF):  # also catches 0 × INF = nan
+        return picks, []
+    return picks, [(item, (unknown / amount, real / amount)) for item, amount in outputs if amount > 0]
 
 
-def depends_on(recipes, cost, choice, idx, target):
-    stack, seen = [cheapest(ids, cost) for ids, _ in recipes[idx][2]], set()
+def depends_on(choice, picks, target):
+    # The picks are frozen in each choice. Following "cheapest input right now" instead used to miss loops:
+    # a later price drop changed which item filled a slot and closed Wood Plank <- Wood Pulp <- Oak Sign <-
+    # Stick <- Wood Plank, which the tree then showed as an unknown "Wood Plank (?)".
+    stack, seen = list(picks), set()
     while stack:
         item = stack.pop()
         if item == target:
@@ -170,8 +206,49 @@ def depends_on(recipes, cost, choice, idx, target):
         if item in seen or how is None or how == "raw":
             continue
         seen.add(item)
-        stack.extend(cheapest(ids, cost) for ids, _ in recipes[how][2])
+        stack.extend(how[1])
     return False
+
+
+def find_cycle(choice):
+    """An item whose chosen recipe leads back to itself, or None."""
+    state = {}  # 1 = on the current DFS path, 2 = finished
+    for root in choice:
+        if root in state:
+            continue
+        stack = [(root, iter(inputs_of(choice, root)))]
+        state[root] = 1
+        while stack:
+            item, rest = stack[-1]
+            nxt = next(rest, None)
+            if nxt is None:
+                state[item] = 2
+                stack.pop()
+            elif state.get(nxt) == 1:
+                return nxt
+            elif nxt not in state:
+                state[nxt] = 1
+                stack.append((nxt, iter(inputs_of(choice, nxt))))
+    return None
+
+
+def inputs_of(choice, item):
+    how = choice.get(item)
+    return () if how is None or how == "raw" else how[1]
+
+
+def break_cycles(recipes, producers, kinds, cost, choice):
+    """Safety net: frozen picks should keep choices acyclic, but if a loop shows up, re-choose one of its items
+    among recipes that don't depend on it. Approximation: items already priced through it keep their old cost."""
+    while (item := find_cycle(choice)) is not None:
+        best, how = (1.0 / unit(kinds, item), 0.0), "raw"
+        for idx in producers[item]:
+            picks, outs = outputs_cost(recipes[idx], cost)
+            for out, value in outs:
+                if out == item and value < best and not depends_on(choice, picks, item):
+                    best, how = value, (idx, picks)
+        cost[item], choice[item] = best, how
+        print(f"loop through {item} rebuilt", file=sys.stderr)
 
 
 def expand(data, cost, choice, item, amount, raw, steps, path=()):
@@ -179,12 +256,12 @@ def expand(data, cost, choice, item, amount, raw, steps, path=()):
     if how is None or how == "raw" or item in path:
         raw[item] += amount
         return
-    machine, _, inputs, outputs = data["recipes"][how][:4]
+    idx, picks = how
+    machine, _, inputs, outputs = data["recipes"][idx][:4]
     made = next(a for o, a in outputs if o == item)
     runs = amount / made
     steps[(machine, item)] += runs
-    for ids, need in inputs:
-        best = cheapest(ids, cost)
+    for best, (_, need) in zip(picks, inputs):
         expand(data, cost, choice, best, need * runs, raw, steps, path + (item,))
 
 
@@ -206,9 +283,9 @@ def show(data, cost, choice, item, amount):
     names, kinds = data["names"], data["kinds"]
     raw, steps = defaultdict(float), defaultdict(float)
     expand(data, cost, choice, item, amount, raw, steps)
-    print(f"{amount:g} × {names.get(item, item)}  [{item}]  costo {cost[item] * amount:.2f}")
+    print(f"{amount:g} × {names.get(item, item)}  [{item}]  costo {shown(cost[item]) * amount:.2f}")
     print("\nmaterie prime:")
-    for r, a in sorted(raw.items(), key=lambda kv: -kv[1] * cost.get(kv[0], 1)):
+    for r, a in sorted(raw.items(), key=lambda kv: -kv[1] * shown(cost.get(kv[0], (0.0, 1.0)))):
         label = f"{a:.0f} L" if kinds.get(r) == "fluid" else f"{a:.2f}".rstrip("0").rstrip(".")
         unknown = "" if GATHERED.search(r) else "  (?) nessuna ricetta: da trovare/comprare"
         print(f"  {label:>10}  {names.get(r, r)}{unknown}")

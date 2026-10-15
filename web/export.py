@@ -33,16 +33,18 @@ def main(out):
     for tier in gc.TIERS:
         cost, choice = gc.cached_solve(data, gc.TIERS.index(tier))
         machines, how = [], {}
-        for item, idx in choice.items():
-            if idx == "raw" or item not in index:
+        for item, chosen in choice.items():
+            if chosen == "raw" or item not in index:
                 continue
+            idx, picks = chosen
             machine, _, inputs, outputs, _, eut, ticks = recipes[idx][:7]
             if machine not in machines:
                 machines.append(machine)
             made = next(a for o, a in outputs if o == item)
-            flat = [x for ids_, need in inputs for x in (index[gc.cheapest(ids_, cost)], need)]
+            flat = [x for best, (_, need) in zip(picks, inputs) for x in (index[best], need)]
             how[index[item]] = [machines.index(machine), eut, ticks, made, flat]
-        costs = [float(f"{cost[i]:.12g}") if cost.get(i, gc.INF) < gc.INF else None for i in ids]
+        shown = [gc.shown(cost.get(i, gc.NO_ROUTE)) for i in ids]
+        costs = [float(f"{c:.12g}") if c < gc.INF else None for c in shown]
         write(f"{out}/data/{tier}.json", {"machines": machines, "cost": costs, "how": how})
         print(tier, len(how), file=sys.stderr)
     here = os.path.dirname(os.path.abspath(__file__))
