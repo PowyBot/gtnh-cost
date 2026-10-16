@@ -5,9 +5,10 @@ Si calcola col Dijkstra generalizzato di Knuth sugli iperarchi: una ricetta "sca
 hanno costo definitivo, quindi i cicli (lingotto ↔ polvere, pacchetti, ...) non abbassano mai i costi.
 Poi si espande l'albero delle ricette scelte fino alle materie prime.
 
-uso: python3 cost.py "LV Machine Hull" [quantità] [--tier MV]
+uso: python3 cost.py "LV Machine Hull" [quantità] [--tier MV] [--real]
      python3 cost.py --find hull
 --tier limita le ricette a quelle fattibili fino a quel tier: Stone, Steam, ULV, LV, ... (default: tutte, anche end-game).
+--real sceglie le ricette "da giocatore": pesa energia e tempo e penalizza le macchine rare (STANDARD_MAPS, UNUSUAL_MAPS).
 """
 import heapq
 import math
@@ -104,6 +105,48 @@ UNMARKED_MULTIBLOCKS = {
     "Nuclear Salt Processing Plant", "Full-Board Immersion Device", "Superconductive Strand Splitter",
     "Accelerated Biological Coordinator", "Heliofusion Exoticizer", "Source Chamber", "COMET - Compact Cyclotron",
 }
+
+# Realistic mode: what a player actually builds. Picked by hand from the 125 recipe maps of the dataset: the GT
+# single blocks every base has, the hand/furnace stuff, and the usual GT multiblocks (EBF, Vacuum Freezer, LCR, ...).
+STANDARD_MAPS = {
+    "Shaped Crafting", "Shapeless Crafting", "Furnace", "Cauldron", "Coke Oven", "Bricked Blast Furnace",
+    "Fluid Solidifier", "Macerator", "Forge Hammer", "Extruder", "Fluid Extractor", "Assembler", "Alloy Smelter",
+    "Arc Furnace", "Cutting Machine", "Canner", "Bending Machine", "Packager", "Unpackager", "Cable Coating",
+    "Blast Furnace", "Centrifuge", "Laser Engraver", "Wiremill", "Chemical Reactor", "Lathe", "Compressor",
+    "Chemical Bath", "Thermal Centrifuge", "Ore Washer", "Mixer", "Distillery", "Brewery", "Forming Press",
+    "Electrolyzer", "Extractor", "Autoclave", "Circuit Assembler", "Electromagnetic Polarizer", "Sifter",
+    "Oil Cracker", "Fermenter", "Electromagnetic Separator", "Fluid Heater",
+    "Large Chemical Reactor", "Implosion Compressor", "Vacuum Freezer", "Distillation Tower", "Assemblyline Process",
+    "Pyrolyse Oven", "Fusion Reactor", "Circuit Assembly Line", "PCB Factory",
+}
+# Machines a player builds for one job and then lives with, not something to reach for: the GT++ copies of
+# standard maps with their own recipes (Multiblock Electrolyzer, Alloy Blast Smelter, ...), and single blocks
+# off the usual path (Dehydrator, Bio Lab, ...). Everything not here and not standard counts as exotic.
+UNUSUAL_MAPS = {
+    "Multiblock Centrifuge", "Multiblock Mixer", "Multiblock Electrolyzer", "Multiblock Dehydrator", "Dehydrator",
+    "Alloy Blast Smelter", "Chemical Plant", "Bio Lab", "Industrial Coke Oven", "Milling", "Flotation Cell",
+    "Nuclear Fission", "Digester", "Dissolution Tank", "Bacterial Vat", "Neutron Activator", "Vacuum Furnace",
+    "Electric Implosion Compressor", "Cold Trap", "Reactor Processing Unit", "Space Assembler",
+    "Condensate Assembling", "Nanochip Conversion Complex", "Component Assembly Line", "Simple Dust Washer",
+}
+# Realistic cost of one recipe run, on top of its inputs, in the same unit as an overworld ore. By eye, tuned so that
+# LV/HV hulls and circuits come out the way a player makes them: a standard step is nearly free, an unusual
+# machine costs about one ore per run, an exotic one five, so only the end game reaches for them.
+STANDARD_RUN, UNUSUAL_RUN, EXOTIC_RUN = 0.05, 1.0, 5.0
+# Thaumcraft needs research and vis/essentia farms, none of which the model counts. At 5 per run a crucible that
+# turns 1 ore into 4 Native Clusters still made redstone in an EV hull chain; by eye, 20 keeps it to the recipes
+# only magic makes.
+MAGIC_RUN = 20.0
+# One overworld ore ≈ 50k EU: a coal ore gives 1-3 coal after processing, 16k EU each in an LV generator.
+REAL_EU_WEIGHT = 2e-5
+# Machine time per second: by eye, 100 s of one machine ≈ half an ore. Machines run in parallel in a real base,
+# so time weighs little; it breaks ties toward the faster recipe.
+REAL_SECOND_WEIGHT = 0.005
+TICKS_PER_SECOND = 20
+# Realistic price per 1000 L. Water and air are endless (a pump, a gas collector): only the machine time counts.
+# Oxygen and nitrogen come out of air in a centrifuge. In the cheapest mode they cost 1 like any gathered thing,
+# so electrolysing obsidian or phosphate dust "made" oxygen cheaper than breathing it.
+REAL_FLUIDS = {"water": 0.05, "air": 0.05, "oxygen": 0.2, "nitrogen": 0.2}
 
 
 NEVER = len(TIERS)
@@ -208,11 +251,34 @@ def cheaper(a, b):
     return a[1] < b[1] * (1 - 1e-6)
 
 
-def solve(data, max_tier=len(TIERS)):
+def raw_cost(data, item, realistic):
+    if realistic and item in REAL_FLUIDS:
+        return REAL_FLUIDS[item] / FLUID_UNIT
+    return data["ores"].get(data["names"].get(item), 1.0) / unit(data["kinds"], item)
+
+
+def overhead(recipe, realistic):
+    """What one run of the recipe costs on top of its inputs."""
+    machine, eu, _, _, _, _, ticks = recipe[:7]
+    if not realistic:
+        return STEP + eu * EU_WEIGHT + MAGIC.get(machine, 0.0)
+    if machine in MAGIC:
+        run = MAGIC_RUN + MAGIC[machine]
+    elif machine in STANDARD_MAPS:
+        run = STANDARD_RUN
+    elif machine in UNUSUAL_MAPS:
+        run = UNUSUAL_RUN
+    else:
+        run = EXOTIC_RUN
+    return run + eu * REAL_EU_WEIGHT + ticks / TICKS_PER_SECOND * REAL_SECOND_WEIGHT
+
+
+def solve(data, max_tier=len(TIERS), realistic=False):
     """Cost of every item, and how it is made: "raw", or (recipe index, chosen item for each input slot)."""
     recipes, kinds = data["recipes"], data["kinds"]
     built = cached(data, "build", build_tiers)
     allowed = [recipe_tier(r, data["multiblocks"], built) <= max_tier for r in recipes]
+    extra = [overhead(r, realistic) for r in recipes]
     producers = defaultdict(list)
     used_by = defaultdict(list)
     for idx, r in enumerate(recipes):
@@ -238,7 +304,7 @@ def solve(data, max_tier=len(TIERS)):
     made_somewhere = {out for r in recipes for out, _ in r[3]}
     for item in set(kinds) | set(producers):
         if GATHERED.search(item):
-            offer(item, (0.0, data["ores"].get(data["names"].get(item), 1.0) / unit(kinds, item)), "raw")
+            offer(item, (0.0, raw_cost(data, item, realistic)), "raw")
         elif item not in made_somewhere:
             # Only for items no recipe makes at any tier. An item made only at a higher tier used to be "unknown"
             # here too, and at Steam an Extractor chain split one Octuple Compressed Cobblestone (only the LV
@@ -259,7 +325,7 @@ def solve(data, max_tier=len(TIERS)):
                 waiting[idx] -= 1
             if waiting[idx] == 0:
                 waiting[idx] = -1
-                picks, outs = outputs_cost(recipes[idx], cost)
+                picks, outs = outputs_cost(recipes[idx], extra[idx], cost)
                 for out, value in outs:
                     offer(out, value, (idx, picks))
 
@@ -271,14 +337,14 @@ def solve(data, max_tier=len(TIERS)):
         for idx, r in enumerate(recipes):
             if not allowed[idx]:
                 continue
-            picks, outs = outputs_cost(r, cost)
+            picks, outs = outputs_cost(r, extra[idx], cost)
             for out, value in outs:
                 if cheaper(value, cost.get(out, NO_ROUTE)) and not depends_on(choice, picks, out):
                     cost[out], choice[out] = value, (idx, picks)
                     changed += 1
         if not changed:
             break
-    break_cycles(recipes, producers, kinds, cost, choice)
+    break_cycles(recipes, extra, producers, kinds, cost, choice)
     return cost, choice
 
 
@@ -286,11 +352,11 @@ def cheapest(ids, cost):
     return min(ids, key=lambda i: cost.get(i, NO_ROUTE))
 
 
-def outputs_cost(recipe, cost):
+def outputs_cost(recipe, extra, cost):
     """Cheapest item for each input slot, and the cost of each output when made from those."""
-    machine, eu, inputs, outputs = recipe[:4]
+    inputs, outputs = recipe[2:4]
     picks = tuple(cheapest(ids, cost) for ids, _ in inputs)
-    unknown, real = 0.0, STEP + eu * EU_WEIGHT + MAGIC.get(machine, 0.0)
+    unknown, real = 0.0, extra
     for item, (_, amount) in zip(picks, inputs):
         u, c = cost.get(item, NO_ROUTE)
         unknown += amount * u
@@ -344,13 +410,13 @@ def inputs_of(choice, item):
     return () if how is None or how == "raw" else how[1]
 
 
-def break_cycles(recipes, producers, kinds, cost, choice):
+def break_cycles(recipes, extra, producers, kinds, cost, choice):
     """Safety net: frozen picks should keep choices acyclic, but if a loop shows up, re-choose one of its items
     among recipes that don't depend on it. Approximation: items already priced through it keep their old cost."""
     while (item := find_cycle(choice)) is not None:
         best, how = (1.0 / unit(kinds, item), 0.0), "raw"
         for idx in producers[item]:
-            picks, outs = outputs_cost(recipes[idx], cost)
+            picks, outs = outputs_cost(recipes[idx], extra[idx], cost)
             for out, value in outs:
                 if out == item and value < best and not depends_on(choice, picks, item):
                     best, how = value, (idx, picks)
@@ -417,8 +483,9 @@ def cached(data, name, compute):
     return value
 
 
-def cached_solve(data, max_tier):
-    return cached(data, TIERS[min(max_tier, len(TIERS) - 1)], lambda d: solve(d, max_tier))
+def cached_solve(data, max_tier, realistic=False):
+    name = ("real-" if realistic else "") + TIERS[min(max_tier, len(TIERS) - 1)]
+    return cached(data, name, lambda d: solve(d, max_tier, realistic))
 
 
 def main(argv):
@@ -432,7 +499,9 @@ def main(argv):
         at = argv.index("--tier")
         max_tier = [t.lower() for t in TIERS].index(argv[at + 1].lower())
         argv = argv[:at] + argv[at + 2:]
-    cost, choice = cached_solve(data, max_tier)
+    realistic = "--real" in argv
+    argv = [a for a in argv if a != "--real"]
+    cost, choice = cached_solve(data, max_tier, realistic)
     amount = float(argv[1]) if len(argv) > 1 else 1.0
     item = pick(data, cost, argv[0])
     if item is None:

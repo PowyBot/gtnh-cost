@@ -18,6 +18,7 @@
       <ul id="suggest" role="listbox" hidden></ul>
     </div>
     <div class="row">
+      <label>Ricette <select id="mode"><option value="cheap">più economiche</option><option value="real">realistiche</option></select></label>
       <label>Tier massimo <select id="tier"></select></label>
       <label>Fermati a <select id="stop"><option value="ores">minerali</option><option value="base">lingotti e polveri</option></select></label>
       <label>Quantità <input id="n" type="number" min="1" step="any" value="1"></label>
@@ -28,7 +29,10 @@
   <section id="result" hidden>
     <h2 id="title"></h2>
     <p id="curve" class="hint" hidden></p>
-    <p class="hint">Costo = materie prime pesate (minerale in overworld = 1) + energia (100k EU = 1). <button id="share" type="button">Copia link</button></p>
+    <p class="hint"><span id="costhint">Costo = materie prime pesate (minerale in overworld = 1) + energia (100k EU = 1).</span>
+      <span id="realhint" hidden>Realistiche: la strada che fa un giocatore. Il punteggio somma materie prime, energia (50k EU = 1), tempo macchina
+      e una penalità per ogni ciclo di macchina (standard 0.05, insolita 1, esotica 5, Thaumcraft 20). Acqua e aria quasi gratis, ossigeno e azoto dall'aria.</span>
+      <button id="share" type="button">Copia link</button></p>
     <h3 id="rawtitle">Materie prime</h3>
     <table id="raw"><thead><tr><th class="num">quantità</th><th>materia prima</th></tr></thead><tbody></tbody></table>
     <h3>Albero delle ricette</h3>

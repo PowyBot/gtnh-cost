@@ -20,11 +20,13 @@ materie prime:
 passi (30 ricette diverse): ...
 ```
 
-- `python3 cost.py "<nome>" [quantità] [--tier Stone|Steam|ULV|LV|MV|...]` — albero di ricette più economico fino alle
-  materie prime. `--tier` usa solo ricette fattibili fino a quel tier (vedi [Tier](#tier)).
+- `python3 cost.py "<nome>" [quantità] [--tier Stone|Steam|ULV|LV|MV|...] [--real]` — albero di ricette più economico fino alle
+  materie prime. `--tier` usa solo ricette fattibili fino a quel tier (vedi [Tier](#tier)); `--real` sceglie quelle che
+  userebbe un giocatore (vedi [Modalità realistica](#modalità-realistica)).
 - `python3 cost.py --find hull` — cerca per nome.
 - `python3 web/export.py /srv/test/gtnh-cost` — sito statico: per ogni tier (Stone..MAX) la ricetta scelta per ogni
-  oggetto in `data/<tier>.json` (+ `.gz`), nomi in `data/items.json`, costo per tier in `data/curves.json`; il browser rifà l'espansione di `cost.py`.
+  oggetto in `data/<tier>.json` (+ `.gz`; `real-<tier>.json` per la modalità realistica), nomi in `data/items.json`,
+  costo per tier in `data/curves.json`; il browser rifà l'espansione di `cost.py`.
   Niente server: Caddy serve i file (`file_server { precompressed gzip }`). Ci mette qualche minuto (un solve per tier).
 - `python3 build.py` — ricompatta il dataset (export oracle GTNH 2.9.0-rc-2, 280k ricette tra GregTech, crafting,
   fornace e Thaumcraft) in `recipes.pkl`, leggendolo una riga alla volta.
@@ -65,6 +67,31 @@ una macchina che la sa fare (regole in `recipe_tier`, `cost.py`):
   cifra fissa (0.5 / 1 / 4, `MAGIC` in `cost.py`).
 - Fuori: macchine che creano materia (replicator, space mining, ...) o fanno energia, ricette senza input.
 
+## Modalità realistica
+
+"Più economico" non è "come lo fai davvero": a EV l'ossigeno per l'acciaio usciva dall'obsidiana del Boldarnator
+(1 redstone → obsidiana → polvere → elettrolisi), e qua e là c'erano Thaumcraft e ricette di riciclo.
+Con `--real` (sul sito: Ricette → realistiche, `&mode=real`) ogni ciclo di una ricetta costa, oltre agli input:
+
+- energia: 50k EU = 1 (un minerale di carbone, macinato e bruciato in un generatore LV, rende più o meno tanto);
+- tempo macchina: 100 s = 0.5, solo per spareggiare (in una base vera le macchine lavorano in parallelo);
+- macchina: 0.05 se è standard (le macchine GT a blocco singolo, banco, fornace, EBF, Vacuum Freezer, LCR, Distillation
+  Tower, Assembly Line…), 1 se è insolita (le copie GT++ come Multiblock Electrolyzer, Alloy Blast Smelter, Dehydrator…),
+  5 se è esotica (tutto il resto: Boldarnator, Helioflux, …), 20 per Thaumcraft. Liste in `STANDARD_MAPS` e `UNUSUAL_MAPS`.
+
+Acqua e aria costano quasi niente (0.05 ogni 1000 L: una pompa, un gas collector), ossigeno e azoto 0.2 (dall'aria
+in centrifuga): in modalità economica valgono 1 come ogni cosa raccolta, ed era questo a far vincere l'obsidiana.
+Il numero che esce è un punteggio, non più materie prime: per le quantità guarda la tabella.
+
+Risultato (`python3 cost.py "LV Machine Hull" --tier EV --real`): niente Boldarnator, Thaumcraft, Alloy Blast Smelter
+né Multiblock Electrolyzer; acciaio nell'EBF con l'ossigeno dall'aria, 24 macchine diverse invece di 33. Lo stesso per
+HV Hull, Electronic Circuit, Good Electronic Circuit e Microprocessor: solo macchine standard (a EV l'HV Hull usa
+ancora l'Alloy Blast Smelter, che a quel punto molti hanno davvero).
+
+Approssimazione: la penalità è per ciclo, non per macchina costruita. Un vero "costo per macchina distinta nella catena"
+non è additivo (dipende da tutta la catena) e il Dijkstra ha bisogno di costi additivi. Così un ingrediente usato in
+tracce può ancora passare da una macchina strana, perché la sua penalità si moltiplica per una quantità piccola.
+
 ## Algoritmo
 
 Dijkstra generalizzato di Knuth sugli iperarchi (una ricetta scatta quando tutti gli input hanno costo definitivo),
@@ -72,5 +99,5 @@ poi passate di rilassamento: in GT un prodotto può costare meno di un ingredien
 cosa che rompe l'ipotesi di Knuth. Un ribasso si accetta solo se non crea cicli nelle scelte.
 Un label-correcting puro ci metteva 2 minuti e trovava cicli "moltiplicatori"; così sono ~10 s (poi in cache).
 
-Limiti noti: "più economico" non è "come lo fai davvero" (a volte sceglie strade bizzarre ma lecite);
-non sa nulla di parallelismo, tempi o macchine già costruite.
+Limiti noti: "più economico" non è "come lo fai davvero" (a volte sceglie strade bizzarre ma lecite: per questo c'è
+la modalità realistica); non sa nulla di parallelismo o di macchine già costruite.

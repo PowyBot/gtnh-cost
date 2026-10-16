@@ -2,7 +2,7 @@
 // Stessa espansione di cost.py, sui file precalcolati da web/export.py.
 const TIERS = ["Stone", "Steam", "ULV", "LV", "MV", "HV", "EV", "IV", "LuV", "ZPM", "UV", "UHV", "UEV", "UIV", "UMV", "UXV", "OpV", "MAX"];
 const $ = (id) => document.getElementById(id);
-let items = [], lower = [], byId = new Map(), tiers = new Map(), selected = null, curves = null;
+let items = [], lower = [], byId = new Map(), files = new Map(), selected = null;
 // "Stop at ingots & dusts": the tree ends at plain Copper Ingot / Copper Dust instead of ores. Piles, impure and
 // purified dusts, and hot ingots are steps on the way there, so they still expand.
 const BASE_MATERIAL = /^(?!Tiny Pile |Small Pile |Impure |Purified |Hot ).* (Ingot|Dust)$/;
@@ -30,22 +30,22 @@ async function getJSON(url) {
   return r.json();
 }
 
-function loadTier(t) {
-  if (!tiers.has(t)) tiers.set(t, getJSON(`data/${t}.json`).catch((e) => { tiers.delete(t); throw e; }));
-  return tiers.get(t);
-}
+// "real-" files hold the realistic choices (cost.py --real), the others the cheapest ones
+const prefix = () => $("mode").value === "real" ? "real-" : "";
 
-// [[tier, cost], ...] per item: the tiers where it gets cheaper. Loaded on the first result, not at start.
-function loadCurves() {
-  curves ??= getJSON("data/curves.json").catch((e) => { curves = null; throw e; });
-  return curves;
+function load(file) {
+  if (!files.has(file)) files.set(file, getJSON(`data/${file}.json`).catch((e) => { files.delete(file); throw e; }));
+  return files.get(file);
 }
+const loadTier = (t) => load(prefix() + t);
+// [[tier, cost], ...] per item: the tiers where it gets cheaper. Loaded on the first result, not at start.
+const loadCurves = () => load(prefix() + "curves");
 
 async function showCurve(item, tier, n) {
   const curve = (await loadCurves())[item];
   if (item !== selected || curve.length < 2) { $("curve").hidden = true; return; }
   const at = TIERS.indexOf(tier);
-  $("curve").replaceChildren("Costo per tier: ", ...curve.flatMap(([t, c], k) => {
+  $("curve").replaceChildren($("mode").value === "real" ? "Punteggio per tier: " : "Costo per tier: ", ...curve.flatMap(([t, c], k) => {
     const b = document.createElement("button");
     b.type = "button";
     b.textContent = `${TIERS[t]} ${pyFixed(c * n, 2)}`;
@@ -149,13 +149,17 @@ async function submit() {
   }
   const params = new URLSearchParams({ item: items[selected][0], tier, n });
   if ($("stop").value === "base") params.set("stop", "base");
+  if ($("mode").value === "real") params.set("mode", "real");
   history.replaceState(null, "", `?${params}`);
   $("status").textContent = "Calcolo…";
   const data = await loadTier(tier), item = selected;
   if (data.cost[item] === null) { $("status").textContent = "Irraggiungibile."; $("result").hidden = true; return; }
   const raw = new Map(), steps = new Map();
   expand(data, item, n, raw, steps, new Set());
-  $("title").textContent = `${n} × ${items[item][1]} — tier ${tierLabel(tier)} — costo ${pyFixed(data.cost[item] * n, 2)}`;
+  const what = $("mode").value === "real" ? "punteggio realistico" : "costo";
+  $("title").textContent = `${n} × ${items[item][1]} — tier ${tierLabel(tier)} — ${what} ${pyFixed(data.cost[item] * n, 2)}`;
+  $("costhint").hidden = $("mode").value === "real";
+  $("realhint").hidden = $("mode").value !== "real";
   $("rawtitle").textContent = $("stop").value === "base" ? "Lingotti, polveri e materie prime" : "Materie prime";
   $("raw").tBodies[0].replaceChildren(...[...raw].filter(([, a]) => a >= TRACE * n).sort((a, b) => b[1] * (data.cost[b[0]] ?? 1) - a[1] * (data.cost[a[0]] ?? 1)).map(([r, a]) => {
     const tr = document.createElement("tr");
@@ -187,6 +191,7 @@ async function init() {
   $("tier").value = TIERS.includes(p.get("tier")) ? p.get("tier") : "LV";
   if (p.get("n")) $("n").value = p.get("n");
   if (p.get("stop") === "base") $("stop").value = "base";
+  if (p.get("mode") === "real") $("mode").value = "real";
   items = await getJSON("data/items.json");
   lower = items.map((x) => x[1].toLowerCase());
   items.forEach((x, i) => byId.set(x[0], i));
@@ -199,7 +204,7 @@ async function init() {
     if (e.key === "Escape") $("suggest").hidden = true;
   });
   $("form").addEventListener("submit", (e) => { e.preventDefault(); $("suggest").hidden = true; submit().catch(fail); });
-  for (const id of ["tier", "stop"]) $(id).addEventListener("change", () => { if (!$("result").hidden) submit().catch(fail); });
+  for (const id of ["tier", "stop", "mode"]) $(id).addEventListener("change", () => { if (!$("result").hidden) submit().catch(fail); });
   $("share").addEventListener("click", async () => {
     try { await navigator.clipboard.writeText(location.href); $("share").textContent = "Copiato!"; }
     catch { prompt("Link:", location.href); }

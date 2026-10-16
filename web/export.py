@@ -3,6 +3,7 @@
 uso: python3 web/export.py /srv/test/gtnh-cost
 Il browser fa poi la stessa espansione di cost.py (expand) sui file JSON.
 data/curves.json: per ogni oggetto, i tier in cui diventa più economico ([tier, costo], ...).
+Ogni file esiste due volte: <tier>.json è la strada più economica, real-<tier>.json quella realistica (cost.py --real).
 """
 import gzip
 import json
@@ -28,16 +29,25 @@ def write(path, obj):
 
 def main(out):
     data = gc.load()
-    names, kinds, recipes = data["names"], data["kinds"], data["recipes"]
+    names, kinds = data["names"], data["kinds"]
     ids = sorted(set(names) | set(kinds))
     index = {item: n for n, item in enumerate(ids)}
     os.makedirs(f"{out}/data", exist_ok=True)
     # [id, nome, fluido?, si raccoglie?]
     write(f"{out}/data/items.json", [[i, names.get(i, i), int(kinds.get(i) == "fluid"), int(bool(gc.GATHERED.search(i)))]
                                      for i in ids])
+    for prefix, realistic in (("", False), ("real-", True)):
+        export_mode(out, data, ids, index, prefix, realistic)
+    here = os.path.dirname(os.path.abspath(__file__))
+    for name in ("index.html", "app.js", "style.css"):
+        shutil.copy(f"{here}/{name}", f"{out}/{name}")
+
+
+def export_mode(out, data, ids, index, prefix, realistic):
+    recipes = data["recipes"]
     curves = [[] for _ in ids]
     for tier in gc.TIERS:
-        cost, choice = gc.cached_solve(data, gc.TIERS.index(tier))
+        cost, choice = gc.cached_solve(data, gc.TIERS.index(tier), realistic)
         machines, how = [], {}
         for item, chosen in choice.items():
             if chosen == "raw" or item not in index:
@@ -51,17 +61,14 @@ def main(out):
             how[index[item]] = [machines.index(machine), eut, ticks, made, flat]
         shown = [gc.shown(cost.get(i, gc.NO_ROUTE)) for i in ids]
         costs = [float(f"{c:.12g}") if c < gc.INF else None for c in shown]
-        write(f"{out}/data/{tier}.json", {"machines": machines, "cost": costs, "how": how})
+        write(f"{out}/data/{prefix}{tier}.json", {"machines": machines, "cost": costs, "how": how})
         t = gc.TIERS.index(tier)
         for curve, c, item in zip(curves, costs, ids):
             # a cost with unknown items in it is a flat 1000 each, not a price worth comparing across tiers
             if cost.get(item, gc.NO_ROUTE)[0] == 0 and (not curve or c < curve[-1][1] * (1 - CURVE_STEP)):
                 curve.append([t, float(f"{c:.5g}")])
-        print(tier, len(how), file=sys.stderr)
-    write(f"{out}/data/curves.json", curves)
-    here = os.path.dirname(os.path.abspath(__file__))
-    for name in ("index.html", "app.js", "style.css"):
-        shutil.copy(f"{here}/{name}", f"{out}/{name}")
+        print(prefix + tier, len(how), file=sys.stderr)
+    write(f"{out}/data/{prefix}curves.json", curves)
 
 
 if __name__ == "__main__":
