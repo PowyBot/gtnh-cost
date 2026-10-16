@@ -2,7 +2,9 @@
 
 Quanto costa *davvero* un oggetto di GregTech: New Horizons, in materie prime.
 
-**Sul web: https://gtnh-cost.test.enn3.ovh** — cerca l'oggetto, scegli tier e quantità, apri l'albero delle ricette.
+**Sul web: https://gtnh-cost.test.enn3.ovh** — cerca l'oggetto, scegli tier e quantità: costo, diagramma di flusso
+della catena, fabbrica (macchine per N al minuto) e albero delle ricette con "perché?". Ricette "più economiche" o
+"realistiche" (quelle di un giocatore vero). Esempio: [LV Machine Hull a EV, realistico, 10/min](https://gtnh-cost.test.enn3.ovh/?item=gregtech%3Agt.blockmachines%4011&tier=EV&n=1&rate=10&mode=real).
 "Fermati a: lingotti e polveri" chiude l'albero ai lingotti e alle polveri semplici (`Copper Ingot`, `Copper Dust`;
 non le pile, le impure/purified né i lingotti caldi), per vedere il conto in metalli invece che in minerali (`&stop=base`).
 Sotto il titolo, "Costo per tier": i tier in cui l'oggetto diventa più economico (es. LV Machine Hull: LV 7.99 → HV 7.48
@@ -26,10 +28,21 @@ passi (30 ricette diverse): ...
 - `python3 cost.py --find hull` — cerca per nome.
 - `python3 web/export.py /srv/test/gtnh-cost` — sito statico: per ogni tier (Stone..MAX) la ricetta scelta per ogni
   oggetto in `data/<tier>.json` (+ `.gz`; `real-<tier>.json` per la modalità realistica), nomi in `data/items.json`,
-  costo per tier in `data/curves.json`; il browser rifà l'espansione di `cost.py`.
-  Niente server: Caddy serve i file (`file_server { precompressed gzip }`). Ci mette qualche minuto (un solve per tier).
+  costo per tier in `data/curves.json`, ricette scartate in `data/alt-<tier>.json`; il browser rifà l'espansione di `cost.py`.
+  Niente server: Caddy serve i file (`file_server { precompressed gzip }`). Ci mette una decina di minuti (due solve
+  per tier, poi in cache); va lanciato sotto `systemd-run --user --scope -p MemoryMax=6G` (picco ~1.5 GB).
 - `python3 build.py` — ricompatta il dataset (export oracle GTNH 2.9.0-rc-2, 280k ricette tra GregTech, crafting,
   fornace e Thaumcraft) in `recipes.pkl`, leggendolo una riga alla volta.
+
+## Ricerca, link e "perché?"
+
+- Ricerca fuzzy: esatto > inizio > dentro > iniziali (`ebf`) > tutte le parole > lettere in ordine, con un punteggio
+  alla fzf calcolato in programmazione dinamica (`lvhul` → LV Machine Hull, `stl plt` → Steel Plate, `electrc circuit`
+  → Electronic Circuit). A parità vince chi al tier scelto si fa o si raccoglie. Frecce e Invio per scegliere.
+- Il link contiene tutto: oggetto, tier, quantità, modalità, `stop`, `rate`, `weight`, nodi aperti e chiusi del diagramma.
+- "perché?" su ogni passo dell'albero (e sulle materie prime): la ricetta scelta e le 3 scartate più economiche, con
+  i loro input e quanto costavano in più. Da `data/alt-<tier>.json`, caricato al primo click. Esempio, Oxygen
+  realistico a EV: dall'aria 0.20 per 1000 L, elettrolisi della Cassiterite Sand 0.48 (+138%).
 
 ## Diagramma
 

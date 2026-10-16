@@ -2,7 +2,7 @@
 // Stessa espansione di cost.py, sui file precalcolati da web/export.py.
 const TIERS = ["Stone", "Steam", "ULV", "LV", "MV", "HV", "EV", "IV", "LuV", "ZPM", "UV", "UHV", "UEV", "UIV", "UMV", "UXV", "OpV", "MAX"];
 const $ = (id) => document.getElementById(id);
-let items = [], lower = [], byId = new Map(), files = new Map(), selected = null;
+let items = [], lower = [], initials = [], byId = new Map(), files = new Map(), selected = null;
 // "Stop at ingots & dusts": the tree ends at plain Copper Ingot / Copper Dust instead of ores. Piles, impure and
 // purified dusts, and hot ingots are steps on the way there, so they still expand.
 const BASE_MATERIAL = /^(?!Tiny Pile |Small Pile |Impure |Purified |Hot ).* (Ingot|Dust)$/;
@@ -57,38 +57,94 @@ async function showCurve(item, tier, n) {
   $("curve").hidden = false;
 }
 
-// Ricerca: frase intera > parole tutte presenti > lettere in ordine.
+// Search ranks: exact > prefix > substring > initials ("ebf" = Electric Blast Furnace) > all words > fuzzy.
+// Fuzzy = the letters in order, scored by gaps (fzf-style) so "lvhul" finds LV Machine Hull and "stl plt" Steel Plate.
+const FUZZY = 5;
+const initialsOf = (s) => s.split(/[\s()\-]+/).map((w) => w[0] || "").join("");
+const isWordStart = (s, j) => j === 0 || " (-".includes(s[j - 1]);
+let fuzzyRows = [new Float64Array(0), new Float64Array(0)]; // reused across the 40k names of every keystroke
+
+// Cheapest placement of the query letters in s, by dynamic programming over positions: a letter right after the
+// previous one is free; a jump costs 1, unless it lands on a word start where the query starts a word too.
+// Greedy first-match got "lvhul" wrong: it took the h of "macHine" instead of the one of "Hull".
+function fuzzy(s, q, starts) {
+  const n = s.length;
+  if (fuzzyRows[0].length < n) fuzzyRows = [new Float64Array(n), new Float64Array(n)];
+  let [prev, cur] = fuzzyRows;
+  for (let j = 0; j < n; j++) prev[j] = s[j] === q[0] ? (isWordStart(s, j) ? 0 : 2) : Infinity;
+  for (let k = 1; k < q.length; k++) {
+    let far = Infinity; // best of prev[0..j-2]
+    for (let j = 0; j < n; j++) {
+      cur[j] = Infinity;
+      if (j >= 1 && s[j] === q[k]) {
+        const jump = isWordStart(s, j) ? (starts[k] ? 0 : 1) : (starts[k] ? 2 : 1);
+        cur[j] = Math.min(prev[j - 1], far + jump);
+      }
+      if (j >= 1) far = Math.min(far, prev[j - 1]);
+    }
+    [prev, cur] = [cur, prev];
+  }
+  let best = Infinity;
+  for (let j = 0; j < n; j++) best = Math.min(best, prev[j]);
+  return best === Infinity ? null : best;
+}
+
+function isSubsequence(s, q) {
+  let k = 0;
+  for (let j = 0; j < s.length && k < q.length; j++) if (s[j] === q[k]) k++;
+  return k === q.length;
+}
+
 function search(q) {
   q = q.trim().toLowerCase();
   if (!q) return [];
-  const words = q.split(/\s+/), hits = [];
+  const words = q.split(/\s+/), packed = q.replace(/\s+/g, ""), hits = [];
+  const starts = words.flatMap((w) => [...w].map((_, k) => k === 0));
   for (let i = 0; i < lower.length; i++) {
-    const s = lower[i];
+    const s = lower[i], at = s.indexOf(q);
     let score;
-    const at = s.indexOf(q);
     if (s === q) score = 0;
     else if (at === 0) score = 1;
     else if (at > 0) score = 2;
-    else if (words.every((w) => s.includes(w))) score = 3;
+    else if (initials[i].startsWith(packed)) score = 3;
+    else if (words.every((w) => s.includes(w))) score = 4;
     else {
-      let k = 0;
-      for (let j = 0; j < s.length && k < q.length; j++) if (s[j] === q[k]) k++;
-      if (k < q.length) continue;
-      score = 4;
+      if (!isSubsequence(s, packed)) continue;
+      score = FUZZY + fuzzy(s, packed, starts);
     }
-    hits.push([score, s.length, i]);
+    hits.push([score, unknownNow(i), s.length, i]);
   }
-  hits.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
-  return hits.slice(0, 40).map((h) => h[2]);
+  hits.sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2]);
+  return hits.slice(0, 40).map((h) => h[3]);
+}
+
+// Among equal matches, items the current tier can make or gather come first: a Steel Ingot from Galacticraft
+// that no recipe makes used to win over GregTech's for being first in the list.
+let shownData = null;
+const unknownNow = (i) => shownData && (shownData.cost[i] === null || unknown(shownData, i)) ? 1 : 0;
+
+// The query's letters in bold, the first time each appears in order.
+function marked(name, q) {
+  const packed = q.trim().toLowerCase().replace(/\s+/g, ""), out = document.createDocumentFragment();
+  let k = 0;
+  for (const ch of name) {
+    const hit = k < packed.length && ch.toLowerCase() === packed[k];
+    if (hit) k++;
+    out.append(hit ? Object.assign(document.createElement("b"), { textContent: ch }) : ch);
+  }
+  return out;
 }
 
 function showSuggest(list) {
   const ul = $("suggest");
-  ul.replaceChildren(...list.map((i) => {
+  ul.replaceChildren(...list.map((i, k) => {
     const li = document.createElement("li");
     li.innerHTML = `<span></span> <small></small>`;
-    li.firstChild.textContent = items[i][1];
+    li.firstChild.append(marked(items[i][1], $("q").value));
     li.lastChild.textContent = items[i][0];
+    li.dataset.item = i;
+    li.setAttribute("role", "option");
+    if (k === 0) li.className = "active";
     li.onmousedown = (e) => { e.preventDefault(); choose(i); };
     return li;
   }));
@@ -112,6 +168,37 @@ function expand(data, item, amount, raw, steps, path) {
   path.delete(item);
 }
 
+// "Why this recipe?": the cheapest recipes the solver passed over (export.py alternatives) and what they cost.
+async function showWhy(data, item, after) {
+  if (after.nextElementSibling?.classList.contains("why")) { after.nextElementSibling.remove(); return; }
+  const box = document.createElement("div");
+  box.className = "why";
+  box.textContent = "Carico le alternative…";
+  after.after(box);
+  const alt = await load(`alt-${prefix()}${$("tier").value}`), rows = alt.alt[item] || [];
+  const unitName = items[item][2] ? "1000 L" : "pezzo", per = items[item][2] ? 1000 : 1, mine = data.cost[item];
+  const how = data.how[item], chosen = how ? data.machines[how[0]] : "materia prima (si raccoglie)";
+  const lines = [`Scelta: ${chosen} — ${pyFixed(mine * per, 2)} per ${unitName}.`];
+  if (!rows.length) lines.push("Nessun'altra ricetta a questo tier.");
+  for (const [m, c, made, inputs] of rows) {
+    const need = new Map();
+    for (let k = 0; k < inputs.length; k += 2) need.set(inputs[k], (need.get(inputs[k]) || 0) + inputs[k + 1] / made * per);
+    const what = [...need].map(([i, a]) => `${fmt(i, a)} ${items[i][1]}`);
+    const more = mine > 0 ? ` (+${Math.round((c / mine - 1) * 100)}%)` : "";
+    lines.push(`Scartata: ${alt.machines[m]} da ${what.join(", ") || "—"} — ${pyFixed(c * per, 2)}${more}`);
+  }
+  box.textContent = lines.join("\n");
+}
+
+function whyButton(data, item, after) {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "whybtn";
+  b.textContent = "perché?";
+  b.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); showWhy(data, item, after()).catch(fail); });
+  return b;
+}
+
 function node(data, item, amount, path) {
   const how = data.how[item], cyc = path.includes(item), stop = stopsAt(item, path.length === 0);
   const label = `<span class="amt">${fmt(item, amount)}</span> <span class="name"></span>`;
@@ -120,6 +207,7 @@ function node(data, item, amount, path) {
     div.className = "leaf";
     div.innerHTML = label + (unknown(data, item) ? ` <span class="warn">(?)</span>` : "");
     div.querySelector(".name").textContent = items[item][1];
+    if (!how && !unknown(data, item)) div.append(" ", whyButton(data, item, () => div));
     return div;
   }
   const [m, eut, ticks, made] = how, runs = amount / made;
@@ -128,6 +216,7 @@ function node(data, item, amount, path) {
   d.querySelector(".name").textContent = items[item][1];
   d.querySelector(".how").textContent = [data.machines[m], eut ? `${eut.toLocaleString("it")} EU/t` : "", ticks > 1 ? `${+(ticks / 20).toFixed(2)} s` : "",
     `× ${+runs.toPrecision(3)}`].filter(Boolean).join(" · ");
+  d.querySelector("summary").append(" ", whyButton(data, item, () => d.querySelector("summary")));
   d.addEventListener("toggle", () => {
     if (!d.open || d.dataset.done) return;
     d.dataset.done = 1;
@@ -272,6 +361,7 @@ async function submit() {
   saveURL();
   $("status").textContent = "Calcolo…";
   const data = await loadTier(tier), item = selected;
+  shownData = data;
   if (data.cost[item] === null) { $("status").textContent = "Irraggiungibile."; $("result").hidden = true; return; }
   const raw = new Map(), steps = new Map();
   expand(data, item, n, raw, steps, new Set());
@@ -318,14 +408,25 @@ async function init() {
   if (p.get("rate")) $("rate").value = p.get("rate");
   items = await getJSON("data/items.json");
   lower = items.map((x) => x[1].toLowerCase());
+  initials = lower.map(initialsOf);
   items.forEach((x, i) => byId.set(x[0], i));
   baseMaterials = new Set(items.flatMap((x, i) => BASE_MATERIAL.test(x[1]) ? [i] : []));
   $("q").disabled = false;
+  loadTier($("tier").value).then((d) => { shownData ??= d; }).catch(() => {}); // only for ranking search hits
   $("status").textContent = "";
   $("q").addEventListener("input", () => { selected = null; showSuggest(search($("q").value)); });
   $("q").addEventListener("blur", () => { $("suggest").hidden = true; });
   $("q").addEventListener("keydown", (e) => {
+    const list = [...$("suggest").children], at = list.findIndex((li) => li.classList.contains("active"));
     if (e.key === "Escape") $("suggest").hidden = true;
+    if ($("suggest").hidden || !list.length) return;
+    if (e.key === "Enter" && at >= 0) { e.preventDefault(); choose(+list[at].dataset.item); return; }
+    const step = { ArrowDown: 1, ArrowUp: -1 }[e.key];
+    if (!step) return;
+    e.preventDefault();
+    const next = (at + step + list.length) % list.length;
+    list.forEach((li, k) => li.classList.toggle("active", k === next));
+    list[next].scrollIntoView({ block: "nearest" });
   });
   $("form").addEventListener("submit", (e) => { e.preventDefault(); $("suggest").hidden = true; submit().catch(fail); });
   $("rate").addEventListener("input", () => { if (!$("result").hidden) submit().catch(fail); });
