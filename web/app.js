@@ -3,6 +3,13 @@
 const TIERS = ["Stone", "Steam", "ULV", "LV", "MV", "HV", "EV", "IV", "LuV", "ZPM", "UV", "UHV", "UEV", "UIV", "UMV", "UXV", "OpV", "MAX"];
 const $ = (id) => document.getElementById(id);
 let items = [], lower = [], byId = new Map(), tiers = new Map(), selected = null;
+// "Stop at ingots & dusts": the tree ends at plain Copper Ingot / Copper Dust instead of ores. Piles, impure and
+// purified dusts, and hot ingots are steps on the way there, so they still expand.
+const BASE_MATERIAL = /^(?!Tiny Pile |Small Pile |Impure |Purified |Hot ).* (Ingot|Dust)$/;
+let baseMaterials = new Set();
+const stopsAt = (item, root) => !root && $("stop").value === "base" && baseMaterials.has(item);
+// unknown = nobody gathers it and no recipe makes it at this tier; a leaf where the tree stopped on purpose has one
+const unknown = (data, item) => !items[item][3] && !data.how[item];
 
 // arrotonda come Python (valore binario esatto, pari a metà), così i numeri coincidono con la CLI
 function pyFixed(a, d) {
@@ -10,7 +17,9 @@ function pyFixed(a, d) {
   const head = exact.slice(0, d ? dot + 1 + d : dot), tail = exact.slice(dot + 1 + d);
   return /^50*$/.test(tail) && +head.at(-1) % 2 === 0 ? head : a.toFixed(d);
 }
-const fmt = (i, a) => items[i][2] ? `${pyFixed(a, 0)} L` : pyFixed(a, 2).replace(/0+$/, "").replace(/\.$/, "");
+// a trace above TRACE still deserves a number other than 0
+const fmt = (i, a) => items[i][2] ? (a < 0.5 ? "<1 L" : `${pyFixed(a, 0)} L`)
+  : a < 0.005 ? "<0.01" : pyFixed(a, 2).replace(/0+$/, "").replace(/\.$/, "");
 const TIER_LABELS = { Stone: "Stone (a mano, fornace)", Steam: "Steam (vapore)", MAX: "tutti (MAX)" };
 const tierLabel = (t) => TIER_LABELS[t] || t;
 const TRACE = 1e-6; // same as cost.py: raw amounts below this per item made are dust from long splitting chains
@@ -73,7 +82,7 @@ function choose(i) {
 
 function expand(data, item, amount, raw, steps, path) {
   const how = data.how[item];
-  if (!how || path.has(item)) { raw.set(item, (raw.get(item) || 0) + amount); return; }
+  if (!how || path.has(item) || stopsAt(item, path.size === 0)) { raw.set(item, (raw.get(item) || 0) + amount); return; }
   const [machine, , , made, inputs] = how, runs = amount / made, key = `${machine} ${item}`;
   steps.set(key, [machine, item, (steps.get(key)?.[2] || 0) + runs]);
   path.add(item);
@@ -82,12 +91,12 @@ function expand(data, item, amount, raw, steps, path) {
 }
 
 function node(data, item, amount, path) {
-  const how = data.how[item], cyc = path.includes(item);
+  const how = data.how[item], cyc = path.includes(item), stop = stopsAt(item, path.length === 0);
   const label = `<span class="amt">${fmt(item, amount)}</span> <span class="name"></span>`;
-  if (!how || cyc) {
+  if (!how || cyc || stop) {
     const div = document.createElement("div");
     div.className = "leaf";
-    div.innerHTML = label + (items[item][3] ? "" : ` <span class="warn">(?)</span>`);
+    div.innerHTML = label + (unknown(data, item) ? ` <span class="warn">(?)</span>` : "");
     div.querySelector(".name").textContent = items[item][1];
     return div;
   }
@@ -117,6 +126,7 @@ async function submit() {
     $("q").value = items[hit][1];
   }
   const params = new URLSearchParams({ item: items[selected][0], tier, n });
+  if ($("stop").value === "base") params.set("stop", "base");
   history.replaceState(null, "", `?${params}`);
   $("status").textContent = "Calcolo…";
   const data = await loadTier(tier), item = selected;
@@ -124,12 +134,13 @@ async function submit() {
   const raw = new Map(), steps = new Map();
   expand(data, item, n, raw, steps, new Set());
   $("title").textContent = `${n} × ${items[item][1]} — tier ${tierLabel(tier)} — costo ${pyFixed(data.cost[item] * n, 2)}`;
+  $("rawtitle").textContent = $("stop").value === "base" ? "Lingotti, polveri e materie prime" : "Materie prime";
   $("raw").tBodies[0].replaceChildren(...[...raw].filter(([, a]) => a >= TRACE * n).sort((a, b) => b[1] * (data.cost[b[0]] ?? 1) - a[1] * (data.cost[a[0]] ?? 1)).map(([r, a]) => {
     const tr = document.createElement("tr");
     tr.innerHTML = `<td class="num"></td><td></td>`;
     tr.cells[0].textContent = fmt(r, a);
-    tr.cells[1].textContent = items[r][1] + (items[r][3] ? "" : " (?) nessuna ricetta: da trovare/comprare");
-    if (!items[r][3]) tr.className = "warn";
+    tr.cells[1].textContent = items[r][1] + (unknown(data, r) ? " (?) nessuna ricetta: da trovare/comprare" : "");
+    if (unknown(data, r)) tr.className = "warn";
     return tr;
   }));
   $("steps").tBodies[0].replaceChildren(...[...steps.values()].sort((a, b) => data.machines[a[0]].localeCompare(data.machines[b[0]])).map(([m, out, runs]) => {
@@ -152,9 +163,11 @@ async function init() {
   const p = new URLSearchParams(location.search);
   $("tier").value = TIERS.includes(p.get("tier")) ? p.get("tier") : "LV";
   if (p.get("n")) $("n").value = p.get("n");
+  if (p.get("stop") === "base") $("stop").value = "base";
   items = await getJSON("data/items.json");
   lower = items.map((x) => x[1].toLowerCase());
   items.forEach((x, i) => byId.set(x[0], i));
+  baseMaterials = new Set(items.flatMap((x, i) => BASE_MATERIAL.test(x[1]) ? [i] : []));
   $("q").disabled = false;
   $("status").textContent = "";
   $("q").addEventListener("input", () => { selected = null; showSuggest(search($("q").value)); });
@@ -163,7 +176,7 @@ async function init() {
     if (e.key === "Escape") $("suggest").hidden = true;
   });
   $("form").addEventListener("submit", (e) => { e.preventDefault(); $("suggest").hidden = true; submit().catch(fail); });
-  $("tier").addEventListener("change", () => { if (!$("result").hidden) submit().catch(fail); });
+  for (const id of ["tier", "stop"]) $(id).addEventListener("change", () => { if (!$("result").hidden) submit().catch(fail); });
   $("share").addEventListener("click", async () => {
     try { await navigator.clipboard.writeText(location.href); $("share").textContent = "Copiato!"; }
     catch { prompt("Link:", location.href); }

@@ -19,6 +19,7 @@
     </div>
     <div class="row">
       <label>Tier massimo <select id="tier"></select></label>
+      <label>Fermati a <select id="stop"><option value="ores">minerali</option><option value="base">lingotti e polveri</option></select></label>
       <label>Quantità <input id="n" type="number" min="1" step="any" value="1"></label>
       <button type="submit">Calcola</button>
     </div>
@@ -27,7 +28,7 @@
   <section id="result" hidden>
     <h2 id="title"></h2>
     <p class="hint">Costo = materie prime pesate (minerale in overworld = 1) + energia (100k EU = 1). <button id="share" type="button">Copia link</button></p>
-    <h3>Materie prime</h3>
+    <h3 id="rawtitle">Materie prime</h3>
     <table id="raw"><thead><tr><th class="num">quantità</th><th>materia prima</th></tr></thead><tbody></tbody></table>
     <h3>Albero delle ricette</h3>
     <p class="hint">Tocca un passo per aprirlo. Ogni riga: quanto serve, oggetto, macchina, EU/t, durata di un ciclo, quanti cicli.</p>

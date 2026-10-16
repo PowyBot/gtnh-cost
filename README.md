@@ -3,6 +3,8 @@
 Quanto costa *davvero* un oggetto di GregTech: New Horizons, in materie prime.
 
 **Sul web: https://gtnh-cost.test.enn3.ovh** — cerca l'oggetto, scegli tier e quantità, apri l'albero delle ricette.
+"Fermati a: lingotti e polveri" chiude l'albero ai lingotti e alle polveri semplici (`Copper Ingot`, `Copper Dust`;
+non le pile, le impure/purified né i lingotti caldi), per vedere il conto in metalli invece che in minerali (`&stop=base`).
 Il link è condivisibile, es. [LV Machine Hull a LV](https://gtnh-cost.test.enn3.ovh/?item=gregtech%3Agt.blockmachines%4011&tier=LV&n=1).
 
 ```

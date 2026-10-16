@@ -394,7 +394,10 @@ def show(data, cost, choice, item, amount):
     print("\nmaterie prime:")
     shown_raw = [(r, a) for r, a in raw.items() if a >= TRACE * amount]
     for r, a in sorted(shown_raw, key=lambda kv: -kv[1] * shown(cost.get(kv[0], (0.0, 1.0)))):
-        label = f"{a:.0f} L" if kinds.get(r) == "fluid" else f"{a:.2f}".rstrip("0").rstrip(".")
+        if kinds.get(r) == "fluid":
+            label = "<1 L" if a < 0.5 else f"{a:.0f} L"
+        else:
+            label = "<0.01" if a < 0.005 else f"{a:.2f}".rstrip("0").rstrip(".")
         unknown = "" if GATHERED.search(r) else "  (?) nessuna ricetta: da trovare/comprare"
         print(f"  {label:>10}  {names.get(r, r)}{unknown}")
     print(f"\npassi ({len(steps)} ricette diverse):")
