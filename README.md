@@ -30,7 +30,7 @@ passi (30 ricette diverse): ...
   oggetto in `data/<tier>.json` (+ `.gz`; `real-<tier>.json` per la modalità realistica), nomi in `data/items.json`,
   costo per tier in `data/curves.json`, ricette scartate in `data/alt-<tier>.json`; il browser rifà l'espansione di `cost.py`.
   Niente server: Caddy serve i file (`file_server { precompressed gzip }`). Ci mette una decina di minuti (due solve
-  per tier, poi in cache); va lanciato sotto `systemd-run --user --scope -p MemoryMax=6G` (picco ~1.5 GB).
+  per tier, poi in cache); va lanciato sotto `systemd-run --user --scope -p MemoryMax=6G`.
 - `python3 build.py` — ricompatta il dataset (export oracle GTNH 2.9.0-rc-2, 280k ricette tra GregTech, crafting,
   fornace e Thaumcraft) in `recipes.pkl`, leggendolo una riga alla volta.
 
