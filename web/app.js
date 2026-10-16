@@ -256,11 +256,17 @@ function showPlan(data, raw, steps, tier) {
     if (machines !== null) { machinesTotal += Math.ceil(machines - 1e-9); euTotal += eu; }
     return { name, item, perMinute, machines, ocEut, ocTicks, eu };
   }).filter((r) => r.perMinute >= TRACE * rate).sort((a, b) => (b.machines ?? -1) - (a.machines ?? -1));
+  // Machines come in whole units, rounded up. The chain then makes at most rate × min(built / needed) a minute:
+  // the step with the least slack (highest load) is the bottleneck the moment the target goes up.
+  const sized = rows.filter((r) => r.machines);
+  for (const r of sized) { r.built = Math.ceil(r.machines - 1e-9); r.load = r.machines / r.built; }
+  const bottleneck = sized.reduce((a, r) => (!a || r.load > a.load ? r : a), null);
   $("plan").tBodies[0].replaceChildren(...rows.map((r) => {
     const tr = document.createElement("tr");
     tr.innerHTML = `<td class="num"></td><td></td><td class="num"></td>`;
-    tr.cells[0].textContent = r.machines === null ? (HAND.has(r.name) ? "a mano" : "—") : `${Math.ceil(r.machines - 1e-9)}`;
-    if (r.machines !== null) tr.cells[0].title = `${+r.machines.toPrecision(3)} macchine a pieno regime`;
+    if (r === bottleneck) tr.className = "bottleneck";
+    tr.cells[0].textContent = r.machines === null ? (HAND.has(r.name) ? "a mano" : "—")
+      : r.built ? `${r.built} · ${Math.round(r.load * 100)}%` : "";
     tr.cells[1].innerHTML = `<span></span> <span class="how"></span>`;
     tr.cells[1].firstChild.textContent = `${r.name}: ${items[r.item][1]}`;
     tr.cells[1].lastChild.textContent = [`${+r.perMinute.toPrecision(3)} cicli/min`, r.ocTicks ? `${+(r.ocTicks / 20).toFixed(2)} s` : "",
@@ -269,8 +275,11 @@ function showPlan(data, raw, steps, tier) {
     return tr;
   }));
   const voltage = TIERS.indexOf(tier) - TIERS.indexOf("ULV"), amps = euTotal / (VOLTAGE_BASE * 4 ** voltage);
+  const maxRate = bottleneck ? rate / bottleneck.load : rate;
   $("plantotal").textContent = `${machinesTotal} macchine, ${Math.round(euTotal).toLocaleString("it")} EU/t in media` +
-    (voltage >= 0 ? ` (${amps.toFixed(1)} A a ${tier})` : " (a vapore: le macchine vogliono vapore, circa 2 L per EU)");
+    (voltage >= 0 ? ` (${amps.toFixed(1)} A a ${tier})` : " (a vapore: le macchine vogliono vapore, circa 2 L per EU)") +
+    (bottleneck ? `. Con queste macchine arrivi fino a ${+maxRate.toPrecision(3)}/min; poi il collo di bottiglia è ` +
+      `${bottleneck.name} (${items[bottleneck.item][1]}, ${Math.round(bottleneck.load * 100)}%).` : "");
   $("planraw").tBodies[0].replaceChildren(...[...raw].filter(([, a]) => a >= TRACE).sort((a, b) => b[1] - a[1]).map(([r, a]) => {
     const tr = document.createElement("tr");
     tr.innerHTML = `<td class="num"></td><td></td>`;
