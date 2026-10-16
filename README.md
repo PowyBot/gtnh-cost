@@ -5,7 +5,8 @@ Quanto costa *davvero* un oggetto di GregTech: New Horizons, in materie prime.
 **Sul web: https://gtnh-cost.test.enn3.ovh** — cerca l'oggetto, scegli tier e quantità, apri l'albero delle ricette.
 "Fermati a: lingotti e polveri" chiude l'albero ai lingotti e alle polveri semplici (`Copper Ingot`, `Copper Dust`;
 non le pile, le impure/purified né i lingotti caldi), per vedere il conto in metalli invece che in minerali (`&stop=base`).
-Il link è condivisibile, es. [LV Machine Hull a LV](https://gtnh-cost.test.enn3.ovh/?item=gregtech%3Agt.blockmachines%4011&tier=LV&n=1).
+Sotto il titolo, "Costo per tier": i tier in cui l'oggetto diventa più economico (es. LV Machine Hull: LV 7.99 → HV 7.48
+→ EV 6.00), per vedere se salire di tier conviene; tocca un tier per aprirlo. Il link è condivisibile, es. [LV Machine Hull a LV](https://gtnh-cost.test.enn3.ovh/?item=gregtech%3Agt.blockmachines%4011&tier=LV&n=1).
 
 ```
 $ python3 cost.py "LV Machine Hull" --tier LV
@@ -23,7 +24,7 @@ passi (30 ricette diverse): ...
   materie prime. `--tier` usa solo ricette fattibili fino a quel tier (vedi [Tier](#tier)).
 - `python3 cost.py --find hull` — cerca per nome.
 - `python3 web/export.py /srv/test/gtnh-cost` — sito statico: per ogni tier (Stone..MAX) la ricetta scelta per ogni
-  oggetto in `data/<tier>.json` (+ `.gz`), nomi in `data/items.json`; il browser rifà l'espansione di `cost.py`.
+  oggetto in `data/<tier>.json` (+ `.gz`), nomi in `data/items.json`, costo per tier in `data/curves.json`; il browser rifà l'espansione di `cost.py`.
   Niente server: Caddy serve i file (`file_server { precompressed gzip }`). Ci mette qualche minuto (un solve per tier).
 - `python3 build.py` — ricompatta il dataset (export oracle GTNH 2.9.0-rc-2, 280k ricette tra GregTech, crafting,
   fornace e Thaumcraft) in `recipes.pkl`, leggendolo una riga alla volta.

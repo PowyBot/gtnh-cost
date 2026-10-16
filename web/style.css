@@ -39,3 +39,5 @@ td, th { padding: 4px 6px; border-bottom: 1px solid var(--line); text-align: lef
 #stepsbox { margin-top: 16px; }
 footer { font-size: .85rem; margin-top: 24px; }
 a { color: var(--accent); }
+#curve button { padding: 1px 7px; margin: 2px 0; font-size: .85rem; background: var(--bg); color: var(--fg); border: 1px solid var(--line); }
+#curve button.now { background: var(--accent); color: #fff; border-color: var(--accent); }

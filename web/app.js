@@ -2,7 +2,7 @@
 // Stessa espansione di cost.py, sui file precalcolati da web/export.py.
 const TIERS = ["Stone", "Steam", "ULV", "LV", "MV", "HV", "EV", "IV", "LuV", "ZPM", "UV", "UHV", "UEV", "UIV", "UMV", "UXV", "OpV", "MAX"];
 const $ = (id) => document.getElementById(id);
-let items = [], lower = [], byId = new Map(), tiers = new Map(), selected = null;
+let items = [], lower = [], byId = new Map(), tiers = new Map(), selected = null, curves = null;
 // "Stop at ingots & dusts": the tree ends at plain Copper Ingot / Copper Dust instead of ores. Piles, impure and
 // purified dusts, and hot ingots are steps on the way there, so they still expand.
 const BASE_MATERIAL = /^(?!Tiny Pile |Small Pile |Impure |Purified |Hot ).* (Ingot|Dust)$/;
@@ -33,6 +33,28 @@ async function getJSON(url) {
 function loadTier(t) {
   if (!tiers.has(t)) tiers.set(t, getJSON(`data/${t}.json`).catch((e) => { tiers.delete(t); throw e; }));
   return tiers.get(t);
+}
+
+// [[tier, cost], ...] per item: the tiers where it gets cheaper. Loaded on the first result, not at start.
+function loadCurves() {
+  curves ??= getJSON("data/curves.json").catch((e) => { curves = null; throw e; });
+  return curves;
+}
+
+async function showCurve(item, tier, n) {
+  const curve = (await loadCurves())[item];
+  if (item !== selected || curve.length < 2) { $("curve").hidden = true; return; }
+  const at = TIERS.indexOf(tier);
+  $("curve").replaceChildren("Costo per tier: ", ...curve.flatMap(([t, c], k) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = `${TIERS[t]} ${pyFixed(c * n, 2)}`;
+    // the tier in use is the last step at or below the chosen one
+    if (t <= at && (curve[k + 1]?.[0] ?? Infinity) > at) b.className = "now";
+    b.addEventListener("click", () => { $("tier").value = TIERS[t]; submit().catch(fail); });
+    return k ? [" → ", b] : [b];
+  }));
+  $("curve").hidden = false;
 }
 
 // Ricerca: frase intera > parole tutte presenti > lettere in ordine.
@@ -156,6 +178,7 @@ async function submit() {
   $("tree").replaceChildren(root);
   $("result").hidden = false;
   $("status").textContent = "";
+  showCurve(item, tier, n).catch(() => { $("curve").hidden = true; });
 }
 
 async function init() {

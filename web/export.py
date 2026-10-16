@@ -2,6 +2,7 @@
 
 uso: python3 web/export.py /srv/test/gtnh-cost
 Il browser fa poi la stessa espansione di cost.py (expand) sui file JSON.
+data/curves.json: per ogni oggetto, i tier in cui diventa più economico ([tier, costo], ...).
 """
 import gzip
 import json
@@ -12,6 +13,10 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import cost as gc  # noqa: E402
 
+# "Cost per tier" keeps a tier only where the item gets this much cheaper, so the file stays small and the
+# line shows the tiers worth reaching, not float noise from re-solving. Stored with 5 digits: the tier files
+# have the exact costs.
+CURVE_STEP = 0.02
 
 
 def write(path, obj):
@@ -30,6 +35,7 @@ def main(out):
     # [id, nome, fluido?, si raccoglie?]
     write(f"{out}/data/items.json", [[i, names.get(i, i), int(kinds.get(i) == "fluid"), int(bool(gc.GATHERED.search(i)))]
                                      for i in ids])
+    curves = [[] for _ in ids]
     for tier in gc.TIERS:
         cost, choice = gc.cached_solve(data, gc.TIERS.index(tier))
         machines, how = [], {}
@@ -46,7 +52,13 @@ def main(out):
         shown = [gc.shown(cost.get(i, gc.NO_ROUTE)) for i in ids]
         costs = [float(f"{c:.12g}") if c < gc.INF else None for c in shown]
         write(f"{out}/data/{tier}.json", {"machines": machines, "cost": costs, "how": how})
+        t = gc.TIERS.index(tier)
+        for curve, c, item in zip(curves, costs, ids):
+            # a cost with unknown items in it is a flat 1000 each, not a price worth comparing across tiers
+            if cost.get(item, gc.NO_ROUTE)[0] == 0 and (not curve or c < curve[-1][1] * (1 - CURVE_STEP)):
+                curve.append([t, float(f"{c:.5g}")])
         print(tier, len(how), file=sys.stderr)
+    write(f"{out}/data/curves.json", curves)
     here = os.path.dirname(os.path.abspath(__file__))
     for name in ("index.html", "app.js", "style.css"):
         shutil.copy(f"{here}/{name}", f"{out}/{name}")
