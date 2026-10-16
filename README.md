@@ -31,6 +31,16 @@ passi (30 ricette diverse): ...
 - `python3 build.py` — ricompatta il dataset (export oracle GTNH 2.9.0-rc-2, 280k ricette tra GregTech, crafting,
   fornace e Thaumcraft) in `recipes.pkl`, leggendolo una riga alla volta.
 
+## Diagramma
+
+Sotto il titolo, la catena come diagramma di flusso (Sankey a strati, `web/flow.js`, SVG senza librerie): materie
+prime a sinistra, l'oggetto a destra, ogni banda larga quanto la quantità che passa (1000 L = 1; con
+"Spessore: costo" invece quanto vale, `&weight=cost`). Le bande si stringono o si allargano apposta: in GT una ricetta
+non conserva le quantità (1 minerale → 2 frantumati). Passa sopra un nodo per macchina, EU/t, durata e cicli;
+cliccalo per chiuderlo o aprirlo (⊕ = chiuso). Da telefono: un tocco mostra i dettagli, il secondo apre o chiude.
+Sopra i 45 nodi la catena parte chiusa dove diventa troppo profonda. Le scelte finiscono nell'URL (`&fold=`, `&open=`).
+Colonne = cammino più lungo da una materia prima; l'ordine nelle colonne è un'euristica del baricentro (8 passate).
+
 ## Fabbrica
 
 Sotto il risultato, "Fabbrica": scrivi quanti pezzi al minuto vuoi (`&rate=10`) e per ogni ricetta della catena

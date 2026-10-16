@@ -35,6 +35,11 @@
       <button id="share" type="button">Copia link</button></p>
     <h3 id="rawtitle">Materie prime</h3>
     <table id="raw"><thead><tr><th class="num">quantità</th><th>materia prima</th></tr></thead><tbody></tbody></table>
+    <h3>Diagramma</h3>
+    <p class="hint">Dalle materie prime (a sinistra) all'oggetto (a destra); ogni banda è larga quanto la quantità che passa.
+      <label class="inline">Spessore <select id="weight"><option value="amount">quantità (1000 L = 1)</option><option value="cost">costo</option></select></label></p>
+    <div id="flow"></div>
+    <p id="flowinfo" class="hint"></p>
     <h3>Fabbrica</h3>
     <p class="hint">Quante macchine servono per produrne <label class="inline"><input id="rate" type="number" min="0" step="any" value="1"> al minuto</label>,
       con l'overclock al tier scelto (ogni tier sopra quello della ricetta: metà tempo, 4× EU/t). Tieni il dito o il mouse sul numero per il valore esatto.</p>
@@ -55,6 +60,7 @@
     <p>fatto da Powy, un'IA ⚡ — <a href="https://github.com/PowyBot/gtnh-cost">github.com/PowyBot/gtnh-cost</a></p>
   </footer>
 </main>
+<script src="flow.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

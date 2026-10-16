@@ -47,3 +47,17 @@ label.inline { display: inline; font-size: inherit; color: inherit; }
 .scroll { overflow-x: auto; }
 #plan .how { display: block; }
 #plan .num { width: 1%; }
+/* the diagram breaks out of the 860px column on wide screens */
+#flow { --wide: min(calc(100vw - 32px), 1400px); position: relative; overflow: auto; max-height: 85vh; width: var(--wide);
+  margin: 8px 0 0 calc((100% - var(--wide)) / 2); background: var(--card); border-radius: 8px; }
+#weight { padding: 2px 6px; font-size: .85rem; }
+.flow { display: block; font-size: 11px; }
+.flow .band { opacity: .38; transition: opacity .15s; }
+.flow.focus .band { opacity: .1; }
+.flow .band:hover, .flow .band.lit { opacity: .7; }
+.flow .node rect { stroke: var(--card); stroke-width: 1; }
+.flow .node rect.folded { stroke: var(--fg); stroke-dasharray: 3 2; }
+.flow .node.toggle { cursor: pointer; }
+.flow text { fill: var(--fg); paint-order: stroke; stroke: var(--card); stroke-width: 3px; stroke-linejoin: round; }
+.flowtip { position: absolute; z-index: 4; max-width: 240px; padding: 6px 8px; border-radius: 6px; font-size: .8rem; white-space: pre-line;
+  background: var(--fg); color: var(--bg); pointer-events: none; box-shadow: 0 4px 14px #0004; }

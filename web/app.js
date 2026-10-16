@@ -191,6 +191,76 @@ function showPlan(data, raw, steps, tier) {
   }));
 }
 
+
+// Flow diagram state: folds the user made on top of the default ones (flow.js defaultFolds), kept in the URL.
+const flowState = { fold: new Set(), open: new Set(), auto: new Set(), args: null };
+const MACHINE_HUE = 137.5; // golden angle: neighbouring machine indices get far-apart hues
+
+function itemColor(data, item, root) {
+  if (item === root) return "var(--accent)";
+  if (unknown(data, item)) return "var(--warn)";
+  if (!data.how[item] || stopsAt(item, false)) return items[item][2] ? "#4a90c2" : "#9c7a54";
+  return `hsl(${data.how[item][0] * MACHINE_HUE % 360} 45% 52%)`;
+}
+
+function showFlow(data, item, n) {
+  // folds from the URL arrive before the first diagram; any later item starts unfolded
+  if (flowState.args && flowState.args[1] !== item) for (const set of [flowState.fold, flowState.open]) set.clear();
+  flowState.args = [data, item, n];
+  const isLeaf = (i) => !data.how[i] || stopsAt(i, i === item);
+  flowState.auto = defaultFolds(data.how, item, n, isLeaf);
+  drawFlowNow();
+}
+
+function drawFlowNow() {
+  const [data, item, n] = flowState.args, byCost = $("weight").value === "cost";
+  const folded = (i) => flowState.fold.has(i) || (flowState.auto.has(i) && !flowState.open.has(i));
+  const graph = drawFlow($("flow"), {
+    how: data.how, root: item, n, folded,
+    isLeaf: (i) => !data.how[i] || stopsAt(i, i === item),
+    toggle: (i) => {
+      const nowFolded = folded(i);
+      for (const set of [flowState.fold, flowState.open]) set.delete(i);
+      if (nowFolded && flowState.auto.has(i)) flowState.open.add(i);
+      if (!nowFolded && !flowState.auto.has(i)) flowState.fold.add(i);
+      saveURL();
+      drawFlowNow();
+    },
+    value: (i, amount) => byCost ? amount * (data.cost[i] ?? 0) : items[i][2] ? amount / 1000 : amount,
+    label: (i) => items[i][1],
+    amountText: fmt,
+    color: (i) => itemColor(data, i, item),
+    details: (i, amount) => {
+      const lines = [`${fmt(i, amount)} ${items[i][1]}`];
+      const how = data.how[i];
+      if (how && !stopsAt(i, i === item)) {
+        const [m, eut, ticks, made] = how;
+        lines.push([data.machines[m], eut ? `${eut.toLocaleString("it")} EU/t` : "", ticks > 1 ? `${+(ticks / 20).toFixed(2)} s` : "",
+          `× ${+(amount / made).toPrecision(3)} cicli`].filter(Boolean).join(" · "));
+      } else {
+        lines.push(unknown(data, i) ? "(?) nessuna ricetta: da trovare/comprare" : "materia prima");
+      }
+      if (data.cost[i] !== null) lines.push(`${$("mode").value === "real" ? "punteggio" : "costo"} ${pyFixed(data.cost[i] * amount, 2)}`);
+      return lines.join("\n");
+    },
+  });
+  $("flowinfo").textContent = `${graph.order.length} nodi. Passa sopra un nodo per i dettagli, cliccalo per aprirlo o chiuderlo` +
+    ` (⊕ = chiuso); da telefono tocca una volta per i dettagli, due per aprire o chiudere.`;
+}
+
+// Everything on screen goes in the URL, so a copied link opens the same view.
+function saveURL() {
+  const params = new URLSearchParams({ item: items[selected][0], tier: $("tier").value, n: $("n").value });
+  if (+$("rate").value !== 1) params.set("rate", $("rate").value);
+  if ($("stop").value === "base") params.set("stop", "base");
+  if ($("mode").value === "real") params.set("mode", "real");
+  if ($("weight").value === "cost") params.set("weight", "cost");
+  for (const [key, set] of [["fold", flowState.fold], ["open", flowState.open]]) {
+    if (set.size) params.set(key, [...set].map((i) => items[i][0]).join(","));
+  }
+  history.replaceState(null, "", `?${params}`);
+}
+
 async function submit() {
   const tier = $("tier").value, n = Math.max(+$("n").value || 1, 1e-9);
   if (selected === null) {
@@ -199,11 +269,7 @@ async function submit() {
     selected = hit;
     $("q").value = items[hit][1];
   }
-  const params = new URLSearchParams({ item: items[selected][0], tier, n });
-  if (+$("rate").value !== 1) params.set("rate", $("rate").value);
-  if ($("stop").value === "base") params.set("stop", "base");
-  if ($("mode").value === "real") params.set("mode", "real");
-  history.replaceState(null, "", `?${params}`);
+  saveURL();
   $("status").textContent = "Calcolo…";
   const data = await loadTier(tier), item = selected;
   if (data.cost[item] === null) { $("status").textContent = "Irraggiungibile."; $("result").hidden = true; return; }
@@ -237,6 +303,7 @@ async function submit() {
   if (root.tagName === "DETAILS") root.open = true;
   $("tree").replaceChildren(root);
   $("result").hidden = false;
+  showFlow(data, item, n); // after unhiding: the layout needs the box width
   $("status").textContent = "";
   showCurve(item, tier, n).catch(() => { $("curve").hidden = true; });
 }
@@ -267,7 +334,15 @@ async function init() {
     try { await navigator.clipboard.writeText(location.href); $("share").textContent = "Copiato!"; }
     catch { prompt("Link:", location.href); }
   });
-  if (byId.has(p.get("item"))) choose(byId.get(p.get("item")));
+  if (p.get("weight") === "cost") $("weight").value = "cost";
+  $("weight").addEventListener("change", () => { saveURL(); drawFlowNow(); });
+  if (byId.has(p.get("item"))) {
+    selected = byId.get(p.get("item"));
+    for (const [key, set] of [["fold", flowState.fold], ["open", flowState.open]]) {
+      for (const id of (p.get(key) || "").split(",")) if (byId.has(id)) set.add(byId.get(id));
+    }
+    choose(selected);
+  }
 }
 
 function fail(e) { $("status").textContent = `Errore: ${e.message}`; }
