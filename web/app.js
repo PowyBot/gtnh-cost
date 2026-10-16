@@ -13,6 +13,7 @@ function pyFixed(a, d) {
 const fmt = (i, a) => items[i][2] ? `${pyFixed(a, 0)} L` : pyFixed(a, 2).replace(/0+$/, "").replace(/\.$/, "");
 const TIER_LABELS = { Stone: "Stone (a mano, fornace)", Steam: "Steam (vapore)", MAX: "tutti (MAX)" };
 const tierLabel = (t) => TIER_LABELS[t] || t;
+const TRACE = 1e-6; // same as cost.py: raw amounts below this per item made are dust from long splitting chains
 
 async function getJSON(url) {
   const r = await fetch(url);
@@ -123,7 +124,7 @@ async function submit() {
   const raw = new Map(), steps = new Map();
   expand(data, item, n, raw, steps, new Set());
   $("title").textContent = `${n} × ${items[item][1]} — tier ${tierLabel(tier)} — costo ${pyFixed(data.cost[item] * n, 2)}`;
-  $("raw").tBodies[0].replaceChildren(...[...raw].sort((a, b) => b[1] * (data.cost[b[0]] ?? 1) - a[1] * (data.cost[a[0]] ?? 1)).map(([r, a]) => {
+  $("raw").tBodies[0].replaceChildren(...[...raw].filter(([, a]) => a >= TRACE * n).sort((a, b) => b[1] * (data.cost[b[0]] ?? 1) - a[1] * (data.cost[a[0]] ?? 1)).map(([r, a]) => {
     const tr = document.createElement("tr");
     tr.innerHTML = `<td class="num"></td><td></td>`;
     tr.cells[0].textContent = fmt(r, a);

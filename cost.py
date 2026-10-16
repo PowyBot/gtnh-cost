@@ -23,6 +23,7 @@ STEP = 0.02           # ogni ricetta costa un po': a parità preferisce catene c
 FLUID_UNIT = 1000.0   # 1000 L di fluido = 1 oggetto
 INF = float("inf")
 SWEEPS = 8            # passate di miglioramento dopo Knuth
+TRACE = 1e-6          # raw amounts below this per item made are hidden: dust left by long splitting chains
 UNKNOWN = 1000.0      # oggetti che nessuna ricetta produce e che non so raccogliere: ultima spiaggia
 # Vis ed essentia di Thaumcraft non sono nel modello: ogni ricetta magica costa una cifra fissa in più.
 MAGIC = {"Thaumcraft Arcane Crafting": 0.5, "Thaumcraft Crucible": 1.0, "Thaumcraft Infusion": 4.0}
@@ -65,27 +66,128 @@ STEAM_MACHINES = {
 # Steam machines look recipes up at LV voltage (MTEBasicMachineBronze.checkRecipe in GT5-Unofficial,
 # https://github.com/GTNewHorizons/GT5-Unofficial), so they run anything up to 32 EU/t of their recipe map.
 STEAM_MAX_EUT = 32
-# The export lists these without machineHandlers, so build.py can't tell they are multiblocks.
-# All have ULV-voltage recipes but need LV+ parts to build.
+# Recipe maps whose controller is named differently; every other multiblock's controller has the map's name.
+CONTROLLER_NAMES = {
+    "Chemical Plant": "ExxonMobil Chemical Plant",
+    "Nanochip Conversion Complex": "Nanochip Assembly Complex",
+    "Multiblock Dehydrator": "Utupu-Tanuri",
+    "Multiblock Electrolyzer": "Industrial Electrolyzer",
+    "Nuclear Fission": "Nuclear Reactor",  # GT's fake map for IC2 reactor fuel rods
+    "High Temperature Gas Reactor": "High Temperature Gas-cooled Reactor",
+    "Foundry Module Components": "Exo-Foundry",
+    "Milling": "IsaMill Grinding Machine",
+    "DTPF": "Dimensionally Transcendent Plasma Forge",
+    "Precise Assembler": "Precise Auto-Assembler MT-3662",
+    "Condensate Entanglement": "Bose-Einstein Condensate Entanglement Apparatus",
+    "Flotation Cell": "Flotation Cell Regulator",
+    "Nuclear Fuel Processing": "Reactor Fuel Processing Plant",
+    "LFTR Gas Sparging": "Sparge Tower Controller",
+    "Clarifier": "Clarifier Purification Unit",
+    "Ozonation": "Ozonation Purification Unit",
+    "Flocculation": "Flocculation Purification Unit",
+    "pH Neutralization": "pH Neutralization Purification Unit",
+    "Temperature Fluctuation": "Extreme Temperature Fluctuation Purification Unit",
+    "High Energy Laser Treatment": "High Energy Laser Purification Unit",
+    "Degassing": "Residual Decontaminant Degasser Purification Unit",
+    "Baryonic Perfection": "Absolute Baryonic Perfection Purification Unit",
+}
+# The export lists these without machineHandlers, so build.py can't tell they are multiblocks. Still treated as
+# single blocks, for lack of a known controller: Vacuum Furnace, Part Processing Apparatus, Ice Cream Machine.
 UNMARKED_MULTIBLOCKS = {
-    "Chemical Plant", "Nanochip Conversion Complex", "Component Assembly Line", "Extreme Heat Exchanger",
-    "Bacterial Vat", "Multiblock Dehydrator", "Nuclear Fission", "Neutron Activator", "High Temperature Gas Reactor",
-    "Foundry Module Components", "Liquid Fluoride Thorium Reactor",
+    *CONTROLLER_NAMES, "Component Assembly Line", "Extreme Heat Exchanger", "Bacterial Vat", "Neutron Activator",
+    "Liquid Fluoride Thorium Reactor", "Helioflux Melting Core", "Electric Implosion Compressor",
+    "Heliothermal Plasma Fabricator", "Target Chamber", "PCB Factory", "Circuit Assembly Line", "Industrial Coke Oven",
+    "Pyrolyse Oven", "Solar Factory", "Nanochip Assembly Matrix", "Digester", "Dissolution Tank",
+    "Nanoprecision Cutting Chamber", "Quantum Force Transformer", "Beam Crafter", "Nanoprecision Wire Tracer",
+    "Draconic Evolution Fusion Crafter", "Nanometer Encasement Wrapper", "Nano Forge", "Naquadah Fuel Refinery",
+    "Ultra-high Energy Etching Array", "Transcendent Plasma Mixer", "Boldarnator", "Optically Optimized Organizer",
+    "Nuclear Salt Processing Plant", "Full-Board Immersion Device", "Superconductive Strand Splitter",
+    "Accelerated Biological Coordinator", "Heliofusion Exoticizer", "Source Chamber", "COMET - Compact Cyclotron",
 }
 
 
-def recipe_tier(recipe, multiblocks):
+NEVER = len(TIERS)
+
+
+def recipe_tier(recipe, multiblocks, built):
+    """built: multiblock -> first tier it can be built at (build_tiers)."""
     machine, _, _, _, voltage, eut, _, handlers = recipe
     if machine in STONE_MACHINES:
         return STONE
     # Thaumcraft has no GT tier: placed in steam age by eye, it's not something you do with just a crafting table.
     if machine in MAGIC or (eut <= STEAM_MAX_EUT and any(h in STEAM_MACHINES for h in handlers)):
         return STEAM
-    single_block = any(h not in multiblocks for h in handlers) if handlers else machine not in UNMARKED_MULTIBLOCKS
-    if voltage + VOLTAGE_TO_TIER <= ULV and single_block:
-        return ULV
-    # The voltage alone used to decide, so ULV filled up with 8 EU/t recipes of LV+ multiblocks.
-    return max(voltage + VOLTAGE_TO_TIER, LV)
+    machines = handlers or (machine,)
+    if any(m not in multiblocks and m not in UNMARKED_MULTIBLOCKS for m in machines):
+        # Assumed buildable at the recipe's voltage: a single block of that tier is made from that tier's parts.
+        return max(voltage + VOLTAGE_TO_TIER, ULV)
+    # The voltage alone used to decide, so 8 EU/t recipes of a Nuclear Fission or a Chemical Plant ran at ULV,
+    # and at LV anything the export filed under an LV voltage, Component Assembly Line included.
+    return max(voltage + VOLTAGE_TO_TIER, LV, min(built.get(m, NEVER) for m in machines))
+
+
+def controllers(data):
+    """Controller item(s) of each multiblock, matched by display name."""
+    made = {out for r in data["recipes"] for out, _ in r[3]}
+    by_name = defaultdict(list)
+    for item, name in data["names"].items():
+        if item in made:
+            by_name[name].append(item)
+    multiblocks = data["multiblocks"] | UNMARKED_MULTIBLOCKS
+    return {m: by_name[CONTROLLER_NAMES.get(m, m)] for m in multiblocks}
+
+
+def build_tiers(data):
+    """First tier at which each multiblock can be built: the lowest tier whose recipes reach its controller from
+    gathered items. Raising the tier, or building a multiblock, admits more recipes, so this is one reachability
+    worklist that grows until nothing new turns up. Conservative: unknown items (no recipe) don't count as
+    available, and a multiblock nobody can build goes to MAX, so the full view still has its recipes."""
+    recipes, multiblocks = data["recipes"], data["multiblocks"]
+    owner = defaultdict(list)
+    for m, items in controllers(data).items():
+        if not items:
+            print(f"no controller with a recipe for {m}", file=sys.stderr)
+        for item in items:
+            owner[item].append(m)
+    built, reached, used_by = {}, set(), defaultdict(list)
+    missing = [None] * len(recipes)  # input slots not reached yet, once the recipe is admitted
+    queue = [item for item in set(data["kinds"]) | set(data["names"]) if GATHERED.search(item)]
+    pending = range(len(recipes))
+    for tier in range(len(TIERS)):
+        while True:
+            later = []
+            for idx in pending:
+                if recipe_tier(recipes[idx], multiblocks, built) > tier:
+                    later.append(idx)
+                    continue
+                slots = [set(ids) for ids, _ in recipes[idx][2] if reached.isdisjoint(ids)]
+                missing[idx] = slots
+                for slot in slots:
+                    for item in slot:
+                        used_by[item].append(idx)
+                if not slots:
+                    queue.extend(out for out, _ in recipes[idx][3])
+            pending = later
+            newly = set()
+            while queue:
+                item = queue.pop()
+                if item in reached:
+                    continue
+                reached.add(item)
+                newly.update(m for m in owner[item] if m not in built)
+                for idx in used_by.pop(item, ()):
+                    slots = missing[idx]
+                    if not slots:
+                        continue
+                    slots[:] = [s for s in slots if item not in s]
+                    if not slots:
+                        queue.extend(out for out, _ in recipes[idx][3])
+            if not newly:
+                break
+            built.update(dict.fromkeys(newly, tier))
+    for m in set(multiblocks) | UNMARKED_MULTIBLOCKS:
+        built.setdefault(m, len(TIERS) - 1)
+    return built
 
 
 # A cost is a pair (unknown, real): how many unknown items (no recipe, not gathered) a route needs, and
@@ -109,7 +211,8 @@ def cheaper(a, b):
 def solve(data, max_tier=len(TIERS)):
     """Cost of every item, and how it is made: "raw", or (recipe index, chosen item for each input slot)."""
     recipes, kinds = data["recipes"], data["kinds"]
-    allowed = [recipe_tier(r, data["multiblocks"]) <= max_tier for r in recipes]
+    built = cached(data, "build", build_tiers)
+    allowed = [recipe_tier(r, data["multiblocks"], built) <= max_tier for r in recipes]
     producers = defaultdict(list)
     used_by = defaultdict(list)
     for idx, r in enumerate(recipes):
@@ -132,10 +235,14 @@ def solve(data, max_tier=len(TIERS)):
         cost[item], choice[item] = value, how
         heapq.heappush(heap, (value, item))
 
+    made_somewhere = {out for r in recipes for out, _ in r[3]}
     for item in set(kinds) | set(producers):
         if GATHERED.search(item):
             offer(item, (0.0, data["ores"].get(data["names"].get(item), 1.0) / unit(kinds, item)), "raw")
-        elif item not in producers:
+        elif item not in made_somewhere:
+            # Only for items no recipe makes at any tier. An item made only at a higher tier used to be "unknown"
+            # here too, and at Steam an Extractor chain split one Octuple Compressed Cobblestone (only the LV
+            # Implosion Compressor makes it) into 9^7 Compressed Cobblestone, showing up as "0 Octuple (?)".
             offer(item, (1.0 / unit(kinds, item), 0.0), "raw")
 
     # 1) Dijkstra generalizzato (Knuth): una ricetta scatta quando tutti gli input hanno costo definitivo.
@@ -285,7 +392,8 @@ def show(data, cost, choice, item, amount):
     expand(data, cost, choice, item, amount, raw, steps)
     print(f"{amount:g} × {names.get(item, item)}  [{item}]  costo {shown(cost[item]) * amount:.2f}")
     print("\nmaterie prime:")
-    for r, a in sorted(raw.items(), key=lambda kv: -kv[1] * shown(cost.get(kv[0], (0.0, 1.0)))):
+    shown_raw = [(r, a) for r, a in raw.items() if a >= TRACE * amount]
+    for r, a in sorted(shown_raw, key=lambda kv: -kv[1] * shown(cost.get(kv[0], (0.0, 1.0)))):
         label = f"{a:.0f} L" if kinds.get(r) == "fluid" else f"{a:.2f}".rstrip("0").rstrip(".")
         unknown = "" if GATHERED.search(r) else "  (?) nessuna ricetta: da trovare/comprare"
         print(f"  {label:>10}  {names.get(r, r)}{unknown}")
@@ -294,16 +402,20 @@ def show(data, cost, choice, item, amount):
         print(f"  {runs:8.2f} × {machine}: {names.get(out, out)}")
 
 
-def cached_solve(data, max_tier):
-    path = f"{DATA[:-4]}-{TIERS[min(max_tier, len(TIERS) - 1)]}.cache.pkl"
+def cached(data, name, compute):
+    path = f"{DATA[:-4]}-{name}.cache.pkl"
     stamp = (os.path.getmtime(DATA), os.path.getmtime(__file__))
     if os.path.exists(path):
-        cached = pickle.load(open(path, "rb"))
-        if cached["stamp"] == stamp:
-            return cached["cost"], cached["choice"]
-    cost, choice = solve(data, max_tier)
-    pickle.dump({"stamp": stamp, "cost": cost, "choice": choice}, open(path, "wb"))
-    return cost, choice
+        hit = pickle.load(open(path, "rb"))
+        if hit["stamp"] == stamp:
+            return hit["value"]
+    value = compute(data)
+    pickle.dump({"stamp": stamp, "value": value}, open(path, "wb"))
+    return value
+
+
+def cached_solve(data, max_tier):
+    return cached(data, TIERS[min(max_tier, len(TIERS) - 1)], lambda d: solve(d, max_tier))
 
 
 def main(argv):
