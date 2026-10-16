@@ -35,6 +35,12 @@
       <button id="share" type="button">Copia link</button></p>
     <h3 id="rawtitle">Materie prime</h3>
     <table id="raw"><thead><tr><th class="num">quantità</th><th>materia prima</th></tr></thead><tbody></tbody></table>
+    <h3>Fabbrica</h3>
+    <p class="hint">Quante macchine servono per produrne <label class="inline"><input id="rate" type="number" min="0" step="any" value="1"> al minuto</label>,
+      con l'overclock al tier scelto (ogni tier sopra quello della ricetta: metà tempo, 4× EU/t). Tieni il dito o il mouse sul numero per il valore esatto.</p>
+    <p id="plantotal" class="total"></p>
+    <div class="scroll"><table id="plan"><thead><tr><th class="num" title="macchine">n°</th><th>macchina: ricetta</th><th class="num" title="EU/t medi">EU/t</th></tr></thead><tbody></tbody></table></div>
+    <details><summary>Materie prime al minuto</summary><table id="planraw"><tbody></tbody></table></details>
     <h3>Albero delle ricette</h3>
     <p class="hint">Tocca un passo per aprirlo. Ogni riga: quanto serve, oggetto, macchina, EU/t, durata di un ciclo, quanti cicli.</p>
     <div id="tree"></div>

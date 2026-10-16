@@ -31,6 +31,16 @@ passi (30 ricette diverse): ...
 - `python3 build.py` — ricompatta il dataset (export oracle GTNH 2.9.0-rc-2, 280k ricette tra GregTech, crafting,
   fornace e Thaumcraft) in `recipes.pkl`, leggendolo una riga alla volta.
 
+## Fabbrica
+
+Sotto il risultato, "Fabbrica": scrivi quanti pezzi al minuto vuoi (`&rate=10`) e per ogni ricetta della catena
+vedi quante macchine servono, i cicli al minuto, durata ed EU/t dopo l'overclock, gli EU/t medi; in fondo le materie
+prime al minuto. Overclock GT5 al tier scelto: ogni tier sopra quello della ricetta (dal suo EU/t) dimezza il tempo
+e quadruplica gli EU/t, fino a 1 tick. Non modellati: overclock perfetti (bobine dell'EBF), parallelismo dei
+multiblocchi GT++, la fornace elettrica (le ricette di fornace senza EU contano come fornace classica, 10 s).
+Il banco da lavoro è "a mano". Le macchine sono arrotondate per eccesso ricetta per ricetta; gli EU/t sono la media
+a regime, non il picco.
+
 ## Tier
 
 Ogni tier include quelli più bassi: Stone < Steam < ULV < LV < … < MAX. Una ricetta sta nel primo tier in cui c'è

@@ -139,6 +139,58 @@ function node(data, item, amount, path) {
   return d;
 }
 
+// Factory planner: machines for a steady rate. GT5 overclock: each voltage tier above the recipe's halves the
+// duration and quadruples the EU/t, down to 1 tick (perfect overclocks of EBF coils etc. are not modelled).
+const VOLTAGE_BASE = 8; // ULV volts; each tier is ×4
+const TICKS_PER_MINUTE = 1200;
+const HAND = new Set(["Shaped Crafting", "Shapeless Crafting"]);
+const recipeVoltage = (eut) => { let v = 0; while (VOLTAGE_BASE * 4 ** v < eut) v++; return v; };
+
+function overclock(eut, ticks, tier) {
+  const machine = TIERS.indexOf(tier) - TIERS.indexOf("ULV");
+  if (!eut || machine < 0) return [eut, ticks]; // no power, or a steam/stone age machine
+  let oc = machine - recipeVoltage(eut);
+  while (oc-- > 0 && ticks >= 2) { ticks = Math.floor(ticks / 2); eut *= 4; }
+  return [eut, ticks];
+}
+
+// One row per recipe of the chain for `rate` items a minute; steps come from expand() for one item.
+function showPlan(data, raw, steps, tier) {
+  const rate = Math.max(+$("rate").value || 0, 0);
+  let machinesTotal = 0, euTotal = 0;
+  const rows = [...steps.values()].map(([m, item, runs]) => {
+    const [, eut, ticks] = data.how[item], perMinute = runs * rate, name = data.machines[m];
+    const [ocEut, ocTicks] = overclock(eut, ticks, tier);
+    // crafting is by hand (or an autocrafter), and a recipe with no duration in the export can't be sized
+    const machines = HAND.has(name) || !ocTicks ? null : perMinute * ocTicks / TICKS_PER_MINUTE;
+    const eu = machines === null ? 0 : machines * ocEut;
+    if (machines !== null) { machinesTotal += Math.ceil(machines - 1e-9); euTotal += eu; }
+    return { name, item, perMinute, machines, ocEut, ocTicks, eu };
+  }).filter((r) => r.perMinute >= TRACE * rate).sort((a, b) => (b.machines ?? -1) - (a.machines ?? -1));
+  $("plan").tBodies[0].replaceChildren(...rows.map((r) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td class="num"></td><td></td><td class="num"></td>`;
+    tr.cells[0].textContent = r.machines === null ? (HAND.has(r.name) ? "a mano" : "—") : `${Math.ceil(r.machines - 1e-9)}`;
+    if (r.machines !== null) tr.cells[0].title = `${+r.machines.toPrecision(3)} macchine a pieno regime`;
+    tr.cells[1].innerHTML = `<span></span> <span class="how"></span>`;
+    tr.cells[1].firstChild.textContent = `${r.name}: ${items[r.item][1]}`;
+    tr.cells[1].lastChild.textContent = [`${+r.perMinute.toPrecision(3)} cicli/min`, r.ocTicks ? `${+(r.ocTicks / 20).toFixed(2)} s` : "",
+      r.ocEut ? `${r.ocEut.toLocaleString("it")} EU/t` : ""].filter(Boolean).join(" · ");
+    tr.cells[2].textContent = r.eu ? Math.round(r.eu).toLocaleString("it") : "";
+    return tr;
+  }));
+  const voltage = TIERS.indexOf(tier) - TIERS.indexOf("ULV"), amps = euTotal / (VOLTAGE_BASE * 4 ** voltage);
+  $("plantotal").textContent = `${machinesTotal} macchine, ${Math.round(euTotal).toLocaleString("it")} EU/t in media` +
+    (voltage >= 0 ? ` (${amps.toFixed(1)} A a ${tier})` : " (a vapore: le macchine vogliono vapore, circa 2 L per EU)");
+  $("planraw").tBodies[0].replaceChildren(...[...raw].filter(([, a]) => a >= TRACE).sort((a, b) => b[1] - a[1]).map(([r, a]) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td class="num"></td><td></td>`;
+    tr.cells[0].textContent = fmt(r, a * rate);
+    tr.cells[1].textContent = items[r][1];
+    return tr;
+  }));
+}
+
 async function submit() {
   const tier = $("tier").value, n = Math.max(+$("n").value || 1, 1e-9);
   if (selected === null) {
@@ -148,6 +200,7 @@ async function submit() {
     $("q").value = items[hit][1];
   }
   const params = new URLSearchParams({ item: items[selected][0], tier, n });
+  if (+$("rate").value !== 1) params.set("rate", $("rate").value);
   if ($("stop").value === "base") params.set("stop", "base");
   if ($("mode").value === "real") params.set("mode", "real");
   history.replaceState(null, "", `?${params}`);
@@ -177,6 +230,9 @@ async function submit() {
     return tr;
   }));
   $("stepsbox").querySelector("summary").textContent = `Tutti i passi (${steps.size} ricette diverse)`;
+  const perItem = new Map(), perItemSteps = new Map();
+  expand(data, item, 1, perItem, perItemSteps, new Set());
+  showPlan(data, perItem, perItemSteps, tier);
   const root = node(data, item, n, []);
   if (root.tagName === "DETAILS") root.open = true;
   $("tree").replaceChildren(root);
@@ -192,6 +248,7 @@ async function init() {
   if (p.get("n")) $("n").value = p.get("n");
   if (p.get("stop") === "base") $("stop").value = "base";
   if (p.get("mode") === "real") $("mode").value = "real";
+  if (p.get("rate")) $("rate").value = p.get("rate");
   items = await getJSON("data/items.json");
   lower = items.map((x) => x[1].toLowerCase());
   items.forEach((x, i) => byId.set(x[0], i));
@@ -204,6 +261,7 @@ async function init() {
     if (e.key === "Escape") $("suggest").hidden = true;
   });
   $("form").addEventListener("submit", (e) => { e.preventDefault(); $("suggest").hidden = true; submit().catch(fail); });
+  $("rate").addEventListener("input", () => { if (!$("result").hidden) submit().catch(fail); });
   for (const id of ["tier", "stop", "mode"]) $(id).addEventListener("change", () => { if (!$("result").hidden) submit().catch(fail); });
   $("share").addEventListener("click", async () => {
     try { await navigator.clipboard.writeText(location.href); $("share").textContent = "Copiato!"; }

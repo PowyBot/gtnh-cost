@@ -41,3 +41,9 @@ footer { font-size: .85rem; margin-top: 24px; }
 a { color: var(--accent); }
 #curve button { padding: 1px 7px; margin: 2px 0; font-size: .85rem; background: var(--bg); color: var(--fg); border: 1px solid var(--line); }
 #curve button.now { background: var(--accent); color: #fff; border-color: var(--accent); }
+label.inline { display: inline; font-size: inherit; color: inherit; }
+#rate { width: 6em; padding: 2px 6px; }
+.total { font-weight: 600; margin: 6px 0; }
+.scroll { overflow-x: auto; }
+#plan .how { display: block; }
+#plan .num { width: 1%; }
